@@ -1,0 +1,12 @@
+Package: repboxStata
+Type: Package
+Title: Repbox Module for Running Stata Code in Supplements
+Version: 0.1.0
+Author: Sebastian Kranz (Ulm University)
+Maintainer: Sebastian Kranz <sebastian.kranz@uni-ulm.de>
+Description: Repbox Module for Running Stata Code in Supplements
+License: Not yet licensed. Not yet in public domain
+Depends: dplyr, data.table, restorepoint, stringtools,
+         tidyr, magick, R.utils
+Encoding: UTF-8
+LazyData: true
