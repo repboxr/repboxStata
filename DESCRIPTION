@@ -6,6 +6,7 @@ Author: Sebastian Kranz (Ulm University)
 Maintainer: Sebastian Kranz <sebastian.kranz@uni-ulm.de>
 Description: Repbox Module for Running Stata Code in Supplements
 License: Not yet licensed. Not yet in public domain
+Remotes: skranz/stringtools
 Depends: dplyr, data.table, restorepoint, stringtools,
          tidyr, magick, R.utils
 Encoding: UTF-8
