@@ -98,7 +98,7 @@ make.builtin.statacmds.list = function() {
 
 }
 
-stata.is.cmd.installed = function(cmd, base_ado_dir = get.base_ado_dir(), ado_dirs = get.ado_dirs(), builtin.cmds = repbox.stata.builtin.cmd()) {
+stata.is.cmd.installed = function(cmd, base_ado_dir = get_base_ado_dir(), ado_dirs = get_ado_dirs(), builtin.cmds = repbox.stata.builtin.cmd()) {
   restore.point("stata.is.cmd.installed")
   first.char = substring(cmd,1,1)
   subpath = paste0("/",first.char,"/",cmd,".ado")
@@ -222,7 +222,7 @@ stata.install.cmd = function(cmd, hot = repbox.hot.modules(),verbose=TRUE,..., n
 }
 
 # installs a stata module locally into the provided directory
-stata.install.module = function(module, dir = get.ado_dirs()[1], verbose=FALSE) {
+stata.install.module = function(module, dir = get_ado_dirs()[1], verbose=FALSE) {
   restore.point("stata.install.module")
   oldwd = getwd()
   setwd(dir)

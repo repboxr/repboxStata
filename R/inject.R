@@ -828,17 +828,17 @@ is.pre.Stata17.table.command = function(txt) {
   any(is.pre)
 }
 
-adopath.injection.code = function(project_dir, ado_dirs = get.ado_dirs()) {
+adopath.injection.code = function(project_dir, ado_dirs = get_ado_dirs()) {
   restore.point("adopath.injection.code")
   ado.files = list.files(file.path(project_dir,"mod"),glob2rx("*.ado"),full.names = TRUE,recursive = TRUE)
 
 
-  extra.ado_dirs = ado_dirs
-  ado_dirs = unique(c(dirname(ado.files), extra.ado_dirs))
+  extra_ado_dirs = ado_dirs
+  ado_dirs = unique(c(dirname(ado.files), extra_ado_dirs))
   if (length(ado_dirs)==0) return("")
 
-  plus.dir = extra.ado_dirs["plus"]
-  personal.dir = extra.ado_dirs["personal"]
+  plus.dir = extra_ado_dirs["plus"]
+  personal.dir = extra_ado_dirs["personal"]
 
   code = ""
   if (!is.na(plus.dir)) {
@@ -855,7 +855,7 @@ adopath.injection.code = function(project_dir, ado_dirs = get.ado_dirs()) {
     # but then some package overwrote the ttest command
     # and we got errors. Now just use adopath +
     # To adjust the order of the dirs though, I entered
-    # rev(ado_dirs). Have no completely checked yet.
+    # rev(ado_dirs). Have not completely checked yet.
     code = paste0(code, paste0('adopath + "',rev(ado_dirs),'"', collapse="\n\t"))
   }
   code

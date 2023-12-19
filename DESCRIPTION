@@ -5,7 +5,7 @@ Version: 0.1.0
 Author: Sebastian Kranz (Ulm University)
 Maintainer: Sebastian Kranz <sebastian.kranz@uni-ulm.de>
 Description: Repbox analysis of stata scripts in reproduction packages
-License: Not yet licensed. Not yet in public domain
+License: GPL >= 3.0
 Remotes: skranz/stringtools
 Depends: dplyr, data.table, restorepoint, stringtools,
          tidyr, magick, R.utils, lubridate

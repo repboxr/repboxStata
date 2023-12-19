@@ -20,7 +20,7 @@
 #' @param loop.log.max Not yet implemented. How many times shall a command inside a loop be logged at most? Some do files have super long loops. The problem is that this can lead to explosion of the cmd files. We try to adapt the code to stop writing in precmd and postcmd if a command was called too often inside a loop.
 #' @param run.first a character string of dofiles that should be run first. Can be used to run install code first
 repbox_stata_opts = function(
-  use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=25, comment.out.install=TRUE, ...) {
+  use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=25, comment.out.install=TRUE, check.stata.paths.and.ado=TRUE, ...) {
   opts = list(
     use.includes=use.includes,
     just.files = just.files,
@@ -39,6 +39,7 @@ repbox_stata_opts = function(
     store.use.data.sig = store.use.data.sig,
     loop.log.cmd.max = loop.log.cmd.max,
     comment.out.install = comment.out.install,
+    check.stata.paths.and.ado=check.stata.paths.and.ado,
     ...
   )
   opts
@@ -56,12 +57,4 @@ rbs.opts = function(name=NULL) {
     return(opts)
   }
   opts[[name]]
-}
-
-set.rbs.opt = function(...) {
-  args = list(...)
-  opts = getOption("repbox.stata.options")
-  opts[names(args)] = args
-  options(repbox.stata.options=opts)
-  invisible(opts)
 }

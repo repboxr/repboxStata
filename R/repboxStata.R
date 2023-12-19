@@ -1,7 +1,7 @@
 example = function() {
   library(repboxRun)
   #set_stata_paths(stata_dir="C:/programs/Stata17",ado_dirs = c(plus = "C:/libraries/repbox/ado/plus"))
-  check_stata_paths()
+  check_stata_paths_and_ado()
   project = "testsupp"
   project_dir = "~/repbox/projects_reg/testsupp"
   #project_dir = file.path("C:/libraries/repbox/projects_reg",project)
@@ -18,7 +18,7 @@ example = function() {
   init.repbox.project(project_dir)
   opts = repbox_stata_opts(just.extract=FALSE, force=FALSE, extract.reg.info = TRUE)
   update.repbox.project(project_dir,stata_opts=opts,run.lang = "stata")
-  stata.analyse.sup(project_dir, opts=opts)
+  repbox_project_run_stata(project_dir, opts=opts)
 
   library(repboxMain)
   opts = repbox_stata_opts(just.extract=TRUE, force=TRUE, overwrite=TRUE)
@@ -62,8 +62,8 @@ repbox_stata_static_parcel = function(project_dir, parcels=list()) {
   parcels
 }
 
-stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.modules=FALSE, opts=rbs.opts(), ...) {
-  restore.point("stata.analyse.sup")
+repbox_project_run_stata = function(project_dir, opts=repbox_stata_opts(), parcels=list(), ...) {
+  restore.point("repbox_project_run_stata")
   options(dplyr.summarise.inform = FALSE)
   options(repbox.stata.options=opts)
   verbose = opts$verbose
@@ -76,21 +76,23 @@ stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.mod
   res.file = file.path(repbox.dir,"repbox_results.Rds")
   if (!opts$force & file.exists(res.file)) {
     cat(paste0("\nStata replication results already exist for ", project_dir, "\n"))
-    if (return.exist)
-      return(invisible(readRDS(res.file)))
-    return(invisible(NULL))
+    return(invisible(parcels))
   }
 
   if (opts$just.extract) {
     cat("\nJust extract results of previous run of Stata do files...\n")
-    return(stata.analyse.sup.extract(project_dir))
+    repbox_stata_extract(project_dir)
+    return(invisible(parcels))
+  }
+
+  if (opts$check.stata.paths.and.ado) {
+    check_stata_paths_and_ado(on_fail="error")
   }
 
 
   if (!dir.exists(repbox.dir)) dir.create(repbox.dir,recursive = TRUE)
 
 
-  file.copy(system.file("misc/find_files.R",package="repboxStata"), file.path(repbox.dir,"find_files.R"),overwrite = TRUE)
   # Reset log of find_files.R
   writeLines(
     "mode,found_file,org_file,sup_dir,cmd,default_ext,wdir",
@@ -116,7 +118,7 @@ stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.mod
 
   if (NROW(do.files)==0) {
     if (verbose) cat("\nNo do files to analyse")
-    return(NULL)
+    return(invisible(parcels))
   }
 
   do.df = lapply(do.files, parse.sup.do, project_dir=project_dir) %>% bind_rows()
@@ -204,13 +206,13 @@ stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.mod
     arrange(donum)
   saveRDS(dotab, file.path(repbox.dir,"dotab.Rds"))
 
-  res = stata.analyse.sup.extract(project_dir, dotab)
-  res
+  res = repbox_stata_extract(project_dir, dotab)
+  invisible(parcels)
 }
 
 
-stata.analyse.sup.extract = function(project_dir, dotab = readRDS.or.null(file.path(project_dir,"repbox/stata/dotab.Rds")), opts=rbs.opts()) {
-  restore.point("stata.analyse.sup.extract")
+repbox_stata_extract = function(project_dir, dotab = readRDS.or.null(file.path(project_dir,"repbox/stata/dotab.Rds")), opts=rbs.opts()) {
+  restore.point("repbox_stata_extract")
 
   if (is.null(dotab)) {
     cat("\nNo dotab.Rds file exists, cannot extract stata results.")
