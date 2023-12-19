@@ -69,7 +69,7 @@ stata.repbox.data.use.info = function(run.df, dotab) {
 # Extract information about used dta files just from the parsed code
 #
 # This will provide a first guess in which order the files should be run
-static.do.use.dta.info = function(do, ph.df=do$ph[[1]], tab=do$tab[[1]], project.dir=do$project.dir, project=do$project[[1]], sup.dir = file.path(project.dir,"mod")) {
+static.do.use.dta.info = function(do, ph.df=do$ph[[1]], tab=do$tab[[1]], project_dir=do$project_dir, project=do$project[[1]], sup.dir = file.path(project_dir,"mod")) {
   # TO DO: PRESERVE / RESTORE ; SAVE AND USE OF SAME FILE IN A DO FILE
 
   restore.point("static.do.use.dta.info")

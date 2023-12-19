@@ -149,11 +149,11 @@ copy.dir = function(from, to, ...) {
   invisible(all(res))
 }
 
-as.path.in.project.dir = function(rel.path,wdir=getwd(), project.dir) {
+as.path.in.project_dir = function(rel.path,wdir=getwd(), project_dir) {
   abs.path = getAbsolutePath(rel.path, wdir, expandTilde=TRUE)
-  project.dir = getAbsolutePath(project.dir, wdir, expandTilde=TRUE)
+  project_dir = getAbsolutePath(project_dir, wdir, expandTilde=TRUE)
 
-  res.path = str.right.of(abs.path,project.dir)
+  res.path = str.right.of(abs.path,project_dir)
 
   if (startsWith(res.path,"/mod/")) {
     res.path = substring(res.path, 6)

@@ -110,7 +110,7 @@ remove.include.output.from.log = function(log.txt) {
 
 # Adapt incl.df such that we can also deal with
 # do commands that use local or global Stata variables
-adapt.incl.df.for.stata.vars = function(incl.df, project.dir) {
+adapt.incl.df.for.stata.vars = function(incl.df, project_dir) {
   restore.point("adapt.incl.df.for.stata.vars")
   incl.df$find.file.code = ""
 
@@ -119,8 +119,8 @@ adapt.incl.df.for.stata.vars = function(incl.df, project.dir) {
 
   # Add dynamic path correction
 
-  sup.dir = file.path(project.dir,"mod")
-  r.script = file.path(project.dir, "repbox/stata/find_files.R")
+  sup.dir = file.path(project_dir,"mod")
+  r.script = file.path(project_dir, "repbox/stata/find_files.R")
 
   file_str = incl.df$shortfile[rows]
   file_str = gsub('"','', file_str, fixed = TRUE)

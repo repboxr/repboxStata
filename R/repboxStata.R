@@ -3,43 +3,43 @@ example = function() {
   #set.stata.paths(stata.dir="C:/programs/Stata17",ado.dirs = c(plus = "C:/libraries/repbox/ado/plus"))
   check.stata.paths()
   project = "testsupp"
-  project.dir = "~/repbox/projects_reg/testsupp"
-  #project.dir = file.path("C:/libraries/repbox/projects_reg",project)
-  parcels = repbox_stata_static_parcel(project.dir)
+  project_dir = "~/repbox/projects_reg/testsupp"
+  #project_dir = file.path("C:/libraries/repbox/projects_reg",project)
+  parcels = repbox_stata_static_parcel(project_dir)
 
-  update.repbox.project(project.dir,run.lang = "stata")
-  rstudioapi::filesPaneNavigate(project.dir)
+  update.repbox.project(project_dir,run.lang = "stata")
+  rstudioapi::filesPaneNavigate(project_dir)
 
 
 
   library(repboxMain)
-  project.dir = "~/repbox/projects2/testsupp"
-  project.dir = "~/repbox/projects_reg/testsupp"
-  init.repbox.project(project.dir)
+  project_dir = "~/repbox/projects2/testsupp"
+  project_dir = "~/repbox/projects_reg/testsupp"
+  init.repbox.project(project_dir)
   opts = repbox.stata.opts(just.extract=FALSE, force=FALSE, extract.reg.info = TRUE)
-  update.repbox.project(project.dir,stata.opts=opts,run.lang = "stata")
-  stata.analyse.sup(project.dir, opts=opts)
+  update.repbox.project(project_dir,stata.opts=opts,run.lang = "stata")
+  stata.analyse.sup(project_dir, opts=opts)
 
   library(repboxMain)
   opts = repbox.stata.opts(just.extract=TRUE, force=TRUE, overwrite=TRUE)
-  update.repbox.project(project.dir,stata.opts=opts)
-  rstudioapi::filesPaneNavigate(project.dir)
+  update.repbox.project(project_dir,stata.opts=opts)
+  rstudioapi::filesPaneNavigate(project_dir)
 }
 
 
 # Currently overlap with analyse.sup
-repbox_stata_static_parcel = function(project.dir, parcels=list()) {
-  parcels = regdb_load_parcels(project.dir, "stata_source", parcels)
+repbox_stata_static_parcel = function(project_dir, parcels=list()) {
+  parcels = regdb_load_parcels(project_dir, "stata_source", parcels)
   source_df = parcels$stata_source$script_source
 
   tab_df = lapply(seq_len(NROW(source_df)), function(i) {
-    res = parse.sup.do(file = source_df$file_path[i],project.dir=project.dir, code = source_df$text[[i]])
+    res = parse.sup.do(file = source_df$file_path[i],project_dir=project_dir, code = source_df$text[[i]])
     tab = res$tab[[1]]
     tab$file_path = source_df$file_path[[i]]
     tab
   }) %>% bind_rows()
 
-  artid = basename(project.dir)
+  artid = basename(project_dir)
 
   cmd_df = tab_df %>%
     mutate(
@@ -58,24 +58,24 @@ repbox_stata_static_parcel = function(project.dir, parcels=list()) {
 
   regdb_check_data(cmd_df,"stata_cmd")
   parcels$stata_cmd = list(stata_cmd = cmd_df)
-  regdb_save_parcels(parcels["stata_cmd"], file.path(project.dir,"repbox","regdb"))
+  regdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repbox","regdb"))
   parcels
 }
 
-stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.modules=FALSE, opts=rbs.opts(), ...) {
+stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.modules=FALSE, opts=rbs.opts(), ...) {
   restore.point("stata.analyse.sup")
   options(dplyr.summarise.inform = FALSE)
   options(repbox.stata.options=opts)
   verbose = opts$verbose
 
-  project = basename(project.dir)
-  sup.dir = file.path(project.dir, "mod")
+  project = basename(project_dir)
+  sup.dir = file.path(project_dir, "mod")
   setwd(sup.dir)
-  repbox.dir = file.path(project.dir,"repbox/stata")
+  repbox.dir = file.path(project_dir,"repbox/stata")
 
   res.file = file.path(repbox.dir,"repbox_results.Rds")
   if (!opts$force & file.exists(res.file)) {
-    cat(paste0("\nStata replication results already exist for ", project.dir, "\n"))
+    cat(paste0("\nStata replication results already exist for ", project_dir, "\n"))
     if (return.exist)
       return(invisible(readRDS(res.file)))
     return(invisible(NULL))
@@ -83,7 +83,7 @@ stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.mod
 
   if (opts$just.extract) {
     cat("\nJust extract results of previous run of Stata do files...\n")
-    return(stata.analyse.sup.extract(project.dir))
+    return(stata.analyse.sup.extract(project_dir))
   }
 
 
@@ -102,7 +102,7 @@ stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.mod
 
   # Remove __MACOSX dirs from supplement
   # TODO: Run on a more general level
-  try(remove.macosx.dirs(project.dir),silent = TRUE)
+  try(remove.macosx.dirs(project_dir),silent = TRUE)
 
   do.files = list.files(sup.dir,glob2rx("*.do"),full.names = TRUE,recursive = TRUE)
   do.files = do.files[!startsWith(basename(do.files),"repbox_")]
@@ -119,14 +119,14 @@ stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.mod
     return(NULL)
   }
 
-  do.df = lapply(do.files, parse.sup.do, project.dir=project.dir) %>% bind_rows()
+  do.df = lapply(do.files, parse.sup.do, project_dir=project_dir) %>% bind_rows()
 
   do.df = add.includes.to.do.df(do.df)
   do.df$use.includes = opts$use.includes
 
   do.df = set.do.df.run.prio(do.df)
 
-  do.df$project.dir = project.dir
+  do.df$project_dir = project_dir
 
   do.df$donum = seq_len(NROW(do.df))
 
@@ -169,8 +169,8 @@ stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.mod
   if (opts$set.stata.defaults.perma) {
     # Run global Stata setup do file
     setup.do.file = system.file("misc/stata_setup.do",package = "repboxStata")
-    file.copy(setup.do.file, file.path(project.dir,"repbox/stata"))
-    run.stata.do(file.path(project.dir,"repbox/stata/stata_setup.do"), verbose=FALSE)
+    file.copy(setup.do.file, file.path(project_dir,"repbox/stata"))
+    run.stata.do(file.path(project_dir,"repbox/stata/stata_setup.do"), verbose=FALSE)
   }
 
 
@@ -204,22 +204,22 @@ stata.analyse.sup = function(project.dir, return.exist=TRUE, install.missing.mod
     arrange(donum)
   saveRDS(dotab, file.path(repbox.dir,"dotab.Rds"))
 
-  res = stata.analyse.sup.extract(project.dir, dotab)
+  res = stata.analyse.sup.extract(project_dir, dotab)
   res
 }
 
 
-stata.analyse.sup.extract = function(project.dir, dotab = readRDS.or.null(file.path(project.dir,"repbox/stata/dotab.Rds")), opts=rbs.opts()) {
+stata.analyse.sup.extract = function(project_dir, dotab = readRDS.or.null(file.path(project_dir,"repbox/stata/dotab.Rds")), opts=rbs.opts()) {
   restore.point("stata.analyse.sup.extract")
 
   if (is.null(dotab)) {
     cat("\nNo dotab.Rds file exists, cannot extract stata results.")
     return(NULL)
   }
-  project = basename(project.dir)
-  sup.dir = file.path(project.dir, "mod")
+  project = basename(project_dir)
+  sup.dir = file.path(project_dir, "mod")
 
-  res = extract.stata.results(project.dir, dotab)
+  res = extract.stata.results(project_dir, dotab)
 
   # After inject and run also some new dta
   # file may have been generated
@@ -228,11 +228,11 @@ stata.analyse.sup.extract = function(project.dir, dotab = readRDS.or.null(file.p
   datatab = tibble(datafile=data.files, database=basename(data.files),dataext = tools::file_ext(data.files), datamb=datamb)
 
   rep.res = c(res,list(datatab=datatab, timestamp = Sys.time()))
-  saveRDS(rep.res, file.path(project.dir,"repbox/stata/repbox_results.Rds"))
+  saveRDS(rep.res, file.path(project_dir,"repbox/stata/repbox_results.Rds"))
 
   # Save tab separately to later include in db
   # We may delete repbox_results.Rds because it is too big
-  saveRDS(res$tab, file.path(project.dir,"repbox/stata/tab.Rds"))
+  saveRDS(res$tab, file.path(project_dir,"repbox/stata/tab.Rds"))
 
   if (opts$extract.reg.info) {
     if (!require(repboxReg)) {
@@ -242,20 +242,20 @@ stata.analyse.sup.extract = function(project.dir, dotab = readRDS.or.null(file.p
   }
 
   if (opts$extract.reg.info) {
-    regtab = extract.stata.regs(project.dir = project.dir, run.df = res$run.df, dotab=dotab)
+    regtab = extract.stata.regs(project_dir = project_dir, run.df = res$run.df, dotab=dotab)
   }
 
   return(invisible(rep.res))
 }
 
 
-parse.sup.do = function(file, reg.cmds = get.regcmds(), project.dir="", catch.err=TRUE, code=NULL) {
+parse.sup.do = function(file, reg.cmds = get.regcmds(), project_dir="", catch.err=TRUE, code=NULL) {
   restore.point("parse.sup.do")
   #if (endsWith(file,"Table6.do")) {
   #  restore.point("jskfjlsfjlsflkjlf")
   #  stop()
   #}
-  project=basename(project.dir)
+  project=basename(project_dir)
   if (is.null(code)) {
     txt = readLines(file,warn = FALSE)
     # To avoid invalid multibyte string errors
@@ -272,7 +272,7 @@ parse.sup.do = function(file, reg.cmds = get.regcmds(), project.dir="", catch.er
     tab=res$tab; ph.df = res$ph.df
   #})
   if (is(err,"try-error")) {
-    return(tibble(project=project, project.dir=project.dir, file = file,ok=FALSE, save.dta = list(NULL), use.dta = list(NULL), ph = list(NULL), tab=list(NULL),num.reg.lines = 0, reg.lines=list(NULL), parse.err = TRUE, parse.err.type=next.cmd))
+    return(tibble(project=project, project_dir=project_dir, file = file,ok=FALSE, save.dta = list(NULL), use.dta = list(NULL), ph = list(NULL), tab=list(NULL),num.reg.lines = 0, reg.lines=list(NULL), parse.err = TRUE, parse.err.type=next.cmd))
   }
 
   #tab = tab.add.dta.file.ext(tab)
@@ -282,7 +282,7 @@ parse.sup.do = function(file, reg.cmds = get.regcmds(), project.dir="", catch.er
 
   reg.lines = which(tab$cmd %in% reg.cmds)
   loads.data = sum(tab$cmd %in% c("use","u","us", "import","guse","insheet","gzuse")) > 0
-  do = list(project=project, project.dir=project.dir,file=file, dofile = basename(file), doid =tools::file_path_sans_ext(basename(file)),ok=TRUE, ph = list(ph.df), tab=list(tab),num.reg.lines = length(reg.lines), reg.lines = list(reg.lines), parse.err=FALSE, parse.err.type="")
+  do = list(project=project, project_dir=project_dir,file=file, dofile = basename(file), doid =tools::file_path_sans_ext(basename(file)),ok=TRUE, ph = list(ph.df), tab=list(tab),num.reg.lines = length(reg.lines), reg.lines = list(reg.lines), parse.err=FALSE, parse.err.type="")
 
   dta.info = lapply(static.do.use.dta.info(do),function(x) list(x))
 
@@ -345,15 +345,15 @@ stata.inject.and.run = function(do, reg.cmds = get.regcmds(), save.changed.data=
 }
 
 get.do.logfile = function(do) {
-  project.dir = do$project.dir
-  log.file = file.path(project.dir,"repbox/stata/logs", paste0("log_", do$donum,".log"))
+  project_dir = do$project_dir
+  log.file = file.path(project_dir,"repbox/stata/logs", paste0("log_", do$donum,".log"))
   log.file
 }
 
 run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
   restore.point("run.do")
 
-  project.dir = do$project.dir
+  project_dir = do$project_dir
   org.file = do$file
   do.dir = dirname(org.file)
   org.base = basename(org.file)
@@ -361,7 +361,7 @@ run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
   new.file = file.path(do.dir, new.base)
 
   # Create repbox dirs and remove files that will be overwritten
-  repbox.dir = file.path(project.dir,"repbox/stata")
+  repbox.dir = file.path(project_dir,"repbox/stata")
   if (!dir.exists(repbox.dir)) dir.create(repbox.dir)
   tsv.dir = file.path(repbox.dir,"tsv")
   create.dir(tsv.dir)

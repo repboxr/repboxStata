@@ -7,8 +7,8 @@ example.repbox.parse = function() {
   restore.point.options(display.restore.point = FALSE)
 
   project = "testsupp"
-  project.dir = file.path("~/repbox/projects_reg",project)
-  run.project.with.reg(project.dir,store.reg.dataset = TRUE)
+  project_dir = file.path("~/repbox/projects_reg",project)
+  run.project.with.reg(project_dir,store.reg.dataset = TRUE)
 
 }
 

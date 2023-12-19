@@ -4,10 +4,10 @@
 # Note that we cannot perform extraction separately for each do file. If there are Stata programs the log of another do file may contain commands associated with the do file where the program is defined.
 #
 
-extract.stata.results = function(project.dir, dotab, opts = rbs.opts()) {
+extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
   restore.point("extract.stata.results")
 
-  project = basename(project.dir)
+  project = basename(project_dir)
   tab = lapply(seq_len(NROW(dotab)), function(i) {
     tab = dotab$tab[[i]]
     tab$project = project
@@ -16,15 +16,15 @@ extract.stata.results = function(project.dir, dotab, opts = rbs.opts()) {
   }) %>% bind_rows()
 
 
-  run.df = extract.stata.run.cmds(project.dir)
-  log.df = extract.stata.logs(project.dir)
+  run.df = extract.stata.run.cmds(project_dir)
+  log.df = extract.stata.logs(project_dir)
   run.df = left_join(run.df, log.df, by=c("donum","line","counter"))
   run.df = left_join(run.df, select(tab, donum, line, orgline, cmd, is.regcmd, in.program, opens_block), by=c("donum", "line"))
   run.df = arrange(run.df, rootdonum, counter, donum,line)
-  run.df = adapt.run.df.error.and.log(run.df, project.dir)
+  run.df = adapt.run.df.error.and.log(run.df, project_dir)
   run.df = add.has.data.to.run.df(run.df)
 
-  run.df = extract.stata.do.output(project.dir, run.df)
+  run.df = extract.stata.do.output(project_dir, run.df)
 
   # Extract written Latex code by commands like esttab
   # Need to extend to created images
@@ -46,17 +46,17 @@ extract.stata.results = function(project.dir, dotab, opts = rbs.opts()) {
     )
   dotab = left_join(dotab, agg, by=c("donum"))
 
-  dotab = extract.do.runtimes(project.dir, dotab)
+  dotab = extract.do.runtimes(project_dir, dotab)
 
   data.use = stata.repbox.data.use.info(run.df=run.df, dotab=dotab)
-  saveRDS(data.use, file.path(project.dir,"repbox/stata/do_data_use.Rds"))
+  saveRDS(data.use, file.path(project_dir,"repbox/stata/do_data_use.Rds"))
 
   list(run.df=run.df,tab=tab, dotab=dotab)
 }
 
-extract.stata.run.cmds = function(project.dir) {
+extract.stata.run.cmds = function(project_dir) {
   restore.point("extract.stata.run.cmds")
-  dir = file.path(project.dir, "repbox/stata/cmd")
+  dir = file.path(project_dir, "repbox/stata/cmd")
   files = list.files(dir,glob2rx("*.csv"),full.names = FALSE)
 
   pre.files = paste0(dir,"/",files[startsWith(files,"precmd_")])
@@ -204,7 +204,7 @@ add.has.data.to.run.df = function(run.df) {
   run.df
 }
 
-adapt.run.df.error.and.log = function(run.df, project.dir) {
+adapt.run.df.error.and.log = function(run.df, project_dir) {
   restore.point("adapt.run.df.error.and.log")
 
   # Remove log from do, run and include commands
@@ -215,7 +215,7 @@ adapt.run.df.error.and.log = function(run.df, project.dir) {
   # filename was replaced
   rows = is.true(run.df$foundfile != "")
   foundfiles = run.df$foundfile[rows]
-  sup.dir = normalizePath(file.path(project.dir, "mod"), mustWork = FALSE,winslash = "/")
+  sup.dir = normalizePath(file.path(project_dir, "mod"), mustWork = FALSE,winslash = "/")
   foundfiles = gsub(sup.dir, "${repbox_path}", foundfiles, fixed=TRUE)
 
   run.df$logtxt[rows] =  stringi::stri_replace_all(run.df$logtxt[rows],fixed = "`r(repbox_corrected_path)'",replacement = foundfiles)
@@ -242,11 +242,11 @@ adapt.run.df.error.and.log = function(run.df, project.dir) {
   run.df
 }
 
-extract.do.runtimes = function(project.dir, dotab) {
+extract.do.runtimes = function(project_dir, dotab) {
   restore.point("extract.do.runtimes")
   dotab$start_time = dotab$end_time = NA
 
-  file = paste0(project.dir,"/repbox/stata/timer/start.txt")
+  file = paste0(project_dir,"/repbox/stata/timer/start.txt")
   if (file.exists(file)) {
     str = readLines(file)
     donum = str.left.of(str,";") %>% as.integer()
@@ -256,7 +256,7 @@ extract.do.runtimes = function(project.dir, dotab) {
     dotab$start_time[donum] = time
   }
 
-  file = paste0(project.dir,"/repbox/stata/timer/end.txt")
+  file = paste0(project_dir,"/repbox/stata/timer/end.txt")
   if (file.exists(file)) {
     str = readLines(file)
     donum = str.left.of(str,";") %>% as.integer()
@@ -272,9 +272,9 @@ extract.do.runtimes = function(project.dir, dotab) {
 }
 
 
-extract.stata.logs = function(project.dir) {
+extract.stata.logs = function(project_dir) {
   restore.point("extract.stata.logs")
-  dir = file.path(project.dir, "repbox/stata/logs")
+  dir = file.path(project_dir, "repbox/stata/logs")
   files = list.files(dir,glob2rx("log_*.log"),full.names = TRUE)
 
   #   # I hoped this code would be faster, but that seems not the case
@@ -432,7 +432,7 @@ add.tab.error.info = function(tab, run.df) {
 
 
 # code to extract special output
-extract.stata.do.output = function(project.dir, run.df) {
+extract.stata.do.output = function(project_dir, run.df) {
   restore.point("extract.stata.do.output")
 
   run.df = add.col(run.df, "out.ext","")
@@ -440,7 +440,7 @@ extract.stata.do.output = function(project.dir, run.df) {
   run.df = add.col(run.df, "out.img.file","")
 
 
-  output.dir = paste0(project.dir,"/repbox/stata/output")
+  output.dir = paste0(project_dir,"/repbox/stata/output")
   out.files = list.files(output.dir, full.names=TRUE)
 
   if (length(out.files)==0) return(run.df)
@@ -450,7 +450,7 @@ extract.stata.do.output = function(project.dir, run.df) {
 
   run.rows = match(donum_line_counter, paste0(run.df$donum,"_",run.df$line,"_", run.df$counter))
 
-  img.dir = paste0(project.dir,"/repbox/www/images")
+  img.dir = paste0(project_dir,"/repbox/www/images")
   if (!dir.exists(img.dir)) dir.create(img.dir,recursive = TRUE)
 
 

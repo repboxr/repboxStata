@@ -1,14 +1,14 @@
 example = function() {
-  project.dir = "/home/rstudio/statabox/supp/restud_88_1_8"
-  compile.project.tex.fragments(project.dir)
+  project_dir = "/home/rstudio/statabox/supp/restud_88_1_8"
+  compile.project.tex.fragments(project_dir)
 
 
-  project.dir = "~/statabox/supp/testsupp"
-  compile.project.tex.fragments(project.dir)
+  project_dir = "~/statabox/supp/testsupp"
+  compile.project.tex.fragments(project_dir)
 
 
 
-  project.dir = "~/repbox/projects/friberg"
+  project_dir = "~/repbox/projects/friberg"
   sup.dir = "~/repbox/projects/friberg/mod"
   dir = "~/repbox/projects/friberg/repbox"
 
@@ -29,8 +29,8 @@ example = function() {
   combine.tex.fragments.to.pdf(tex.files)
 }
 
-compile.project.tex.fragments = function(project.dir, make.png=FALSE, ignore.full.doc=FALSE) {
-  sup.dir = file.path(project.dir,"mod")
+compile.project.tex.fragments = function(project_dir, make.png=FALSE, ignore.full.doc=FALSE) {
+  sup.dir = file.path(project_dir,"mod")
   fragment.files =  find.tex.fragments(sup.dir)
   for (f in fragment.files) {
     try(compile.tex.fragment(f, make.png=make.png, ignore.full.doc=ignore.full.doc))

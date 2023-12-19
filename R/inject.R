@@ -13,9 +13,9 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   restore.point("inject.do")
   #if (do$doid=="config") stop()
 
-  project.dir=do$project.dir
+  project_dir=do$project_dir
   id = tools::file_path_sans_ext(basename(do$file))
-  repbox.dir = file.path(project.dir,"repbox/stata")
+  repbox.dir = file.path(project_dir,"repbox/stata")
 
   tab = do$tab[[1]]
   tab$org_cmd = ""
@@ -48,7 +48,7 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
 
   # Old: static path correction
-  #res = correct.do.paths(do = do,txt=txt,dir=project.dir)
+  #res = correct.do.paths(do = do,txt=txt,dir=project_dir)
   #new.txt = txt = res$txt; fph=res$ph
 
   new.txt = txt
@@ -129,7 +129,7 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
     # Adapt incl.df such that we can also deal with
     # do commands that use local or global Stata variables
-    incl.df = adapt.incl.df.for.stata.vars(incl.df,do$project.dir)
+    incl.df = adapt.incl.df.for.stata.vars(incl.df,do$project_dir)
 
     # Update do commands
     incl.do.df = filter(incl.df, cmd=="do" | cmd == "run")
@@ -325,8 +325,8 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   # and start a separate log if the do file
   # is not included in another do file
 
-  start.timer.file = paste0(project.dir,"/repbox/stata/timer/start.txt")
-  end.timer.file = paste0(project.dir,"/repbox/stata/timer/end.txt")
+  start.timer.file = paste0(project_dir,"/repbox/stata/timer/start.txt")
+  end.timer.file = paste0(project_dir,"/repbox/stata/timer/end.txt")
 
   txt = c(paste0('
 file open repbox_timer_file using "', start.timer.file,'", write append
@@ -340,7 +340,7 @@ if "$repbox_cmd_count" == "" {
   global repbox_cmd_count = 0
   global repbox_root_donum = ', do$donum,'
   log using \"',log.file,'\", replace name(',log.name,')
-  ', adopath.injection.code(project.dir),'
+  ', adopath.injection.code(project_dir),'
 }
 else {
   log using \"',incl.log.file,'\", replace name(',log.name,')
@@ -381,7 +381,7 @@ end.injection = function(donum, lines, type,...) {
 
 post.injection = function(txt, lines, do, reset.datasig=FALSE, report.datasig=FALSE, report.xtset=FALSE) {
   restore.point("post.injection")
-  rep.dir = file.path(do$project.dir,"repbox/stata")
+  rep.dir = file.path(do$project_dir,"repbox/stata")
   cmdfile = file.path(rep.dir,"cmd", paste0("postcmd_",do$donum,".csv"))
   tab = do$tab[[1]]
   errcode_str = ifelse(is.true(tab$add.capture[lines]),"`=_rc\'","")
@@ -415,7 +415,7 @@ file close repbox_cmd_file
 
 post.injection.old = function(txt, lines, do, reset.datasig=FALSE, report.datasig=FALSE, report.xtset=FALSE) {
   restore.point("post.injection")
-  rep.dir = file.path(do$project.dir,"repbox/stata")
+  rep.dir = file.path(do$project_dir,"repbox/stata")
   cmdfile = file.path(rep.dir,"cmd", paste0("postcmd_",do$donum,".csv"))
   tab = do$tab[[1]]
   errcode_str = ifelse(is.true(tab$add.capture[lines]),"`=_rc\'","")
@@ -503,7 +503,7 @@ save.dta.injection.old = function(txt, lines, do, opts=rbs.opts()) {
       if.cond = paste0("`repbox_local_cmd_count' == ", counter, collapse = "|")
     )
 
-  save.dta.files = paste0(do$project.dir, "/repbox/stata/dta/",do$donum,"_",df$line,"_`repbox_local_cmd_count'",".dta")
+  save.dta.files = paste0(do$project_dir, "/repbox/stata/dta/",do$donum,"_",df$line,"_`repbox_local_cmd_count'",".dta")
 
   code = ifelse(df$use.if,
                 paste0('
@@ -526,7 +526,7 @@ global repbox_reg_datasig = r(fulldatasignature)
 
 pre.injection = function(txt, lines=seq_along(txt), do) {
   #restore.point("pre.injection")
-  rep.dir = file.path(do$project.dir,"/repbox/stata")
+  rep.dir = file.path(do$project_dir,"/repbox/stata")
   cmd.file = file.path(rep.dir,"cmd", paste0("precmd_",do$donum,".csv"))
   tab = do$tab[[1]]
   add.path.correction = tab$add.path.correction[lines]
@@ -596,14 +596,14 @@ else {
 
 inject.path.correction.pre = function(txt, lines=seq_along(txt), do) {
   restore.point("inject.path.correction")
-  project.dir = do$project.dir
-  sup.dir = normalizePath(file.path(project.dir,"mod"), winslash = "/")
+  project_dir = do$project_dir
+  sup.dir = normalizePath(file.path(project_dir,"mod"), winslash = "/")
 
   tab = do$tab[[1]][lines,]
   default_ext = get.stata.default.file.extension(tab)
 
   txt
-  r.script = file.path(project.dir, "repbox/stata/find_files.R")
+  r.script = file.path(project_dir, "repbox/stata/find_files.R")
   tab = do$tab[[1]][lines,]
   ph = do$ph[[1]]
 
@@ -655,14 +655,14 @@ repbox_correct_path "',type,'" "`repbox_source_path\'" "', default_ext,'" "',sup
 inject.path.correction.pre.using.r = function(txt, lines=seq_along(txt), do) {
   restore.point("inject.path.correction")
   #if (do$doid == "elaborations_money_partners_strangers") stop()
-  project.dir = do$project.dir
-  sup.dir = file.path(project.dir,"mod")
+  project_dir = do$project_dir
+  sup.dir = file.path(project_dir,"mod")
 
   tab = do$tab[[1]][lines,]
   default_ext = get.stata.default.file.extension(tab)
 
   txt
-  r.script = file.path(project.dir, "repbox/stata/find_files.R")
+  r.script = file.path(project_dir, "repbox/stata/find_files.R")
   tab = do$tab[[1]][lines,]
   ph = do$ph[[1]]
 
@@ -749,7 +749,7 @@ global repbox_load_datasig = r(fulldatasignature)
 injection.esttab.etc = function(txt, lines=seq_along(txt), do) {
   restore.point("injection.esttab.etc")
   tab = do$tab[[1]]
-  output.dir = file.path(do$project.dir,"repbox/stata/output")
+  output.dir = file.path(do$project_dir,"repbox/stata/output")
   ext_code = 'local repbox_file_ext = substr("`repbox_corrected_path\'", strrpos("`repbox_corrected_path\'","."), strlen("`repbox_corrected_path\'"))'
 
 
@@ -769,7 +769,7 @@ copy "`repbox_corrected_path\'" "',output.file,'"
 injection.graph.save = function(txt, lines, do) {
   restore.point("injection.graph.save")
   tab = do$tab[[1]]
-  output.dir = file.path(do$project.dir,"repbox/stata/output")
+  output.dir = file.path(do$project_dir,"repbox/stata/output")
   output.file = paste0(output.dir,"/", do$donum,"_", lines,"_`repbox_local_cmd_count'",".svg")
 
   paste0('
@@ -828,9 +828,9 @@ is.pre.Stata17.table.command = function(txt) {
   any(is.pre)
 }
 
-adopath.injection.code = function(project.dir, ado.dirs = get.ado.dirs()) {
+adopath.injection.code = function(project_dir, ado.dirs = get.ado.dirs()) {
   restore.point("adopath.injection.code")
-  ado.files = list.files(file.path(project.dir,"mod"),glob2rx("*.ado"),full.names = TRUE,recursive = TRUE)
+  ado.files = list.files(file.path(project_dir,"mod"),glob2rx("*.ado"),full.names = TRUE,recursive = TRUE)
 
 
   extra.ado.dirs = ado.dirs
