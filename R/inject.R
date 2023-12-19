@@ -828,35 +828,35 @@ is.pre.Stata17.table.command = function(txt) {
   any(is.pre)
 }
 
-adopath.injection.code = function(project_dir, ado.dirs = get.ado.dirs()) {
+adopath.injection.code = function(project_dir, ado_dirs = get.ado_dirs()) {
   restore.point("adopath.injection.code")
   ado.files = list.files(file.path(project_dir,"mod"),glob2rx("*.ado"),full.names = TRUE,recursive = TRUE)
 
 
-  extra.ado.dirs = ado.dirs
-  ado.dirs = unique(c(dirname(ado.files), extra.ado.dirs))
-  if (length(ado.dirs)==0) return("")
+  extra.ado_dirs = ado_dirs
+  ado_dirs = unique(c(dirname(ado.files), extra.ado_dirs))
+  if (length(ado_dirs)==0) return("")
 
-  plus.dir = extra.ado.dirs["plus"]
-  personal.dir = extra.ado.dirs["personal"]
+  plus.dir = extra.ado_dirs["plus"]
+  personal.dir = extra.ado_dirs["personal"]
 
   code = ""
   if (!is.na(plus.dir)) {
-    ado.dirs = setdiff(ado.dirs, plus.dir)
+    ado_dirs = setdiff(ado_dirs, plus.dir)
     code = paste0(code, 'sysdir set PLUS "', plus.dir,'"\n\t')
   }
   if (!is.na(personal.dir)) {
-    ado.dirs = setdiff(ado.dirs, personal.dir)
+    ado_dirs = setdiff(ado_dirs, personal.dir)
     code = paste0(code, 'sysdir set PERSONAL "', personal.dir,'"\n\t')
   }
 
-  if (length(ado.dirs)>0) {
+  if (length(ado_dirs)>0) {
     # Important: Previously, I used adopath ++
     # but then some package overwrote the ttest command
     # and we got errors. Now just use adopath +
     # To adjust the order of the dirs though, I entered
-    # rev(ado.dirs). Have no completely checked yet.
-    code = paste0(code, paste0('adopath + "',rev(ado.dirs),'"', collapse="\n\t"))
+    # rev(ado_dirs). Have no completely checked yet.
+    code = paste0(code, paste0('adopath + "',rev(ado_dirs),'"', collapse="\n\t"))
   }
   code
 }

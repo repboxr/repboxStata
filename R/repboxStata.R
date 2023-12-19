@@ -1,7 +1,7 @@
 example = function() {
   library(repboxRun)
-  #set.stata.paths(stata.dir="C:/programs/Stata17",ado.dirs = c(plus = "C:/libraries/repbox/ado/plus"))
-  check.stata.paths()
+  #set_stata_paths(stata_dir="C:/programs/Stata17",ado_dirs = c(plus = "C:/libraries/repbox/ado/plus"))
+  check_stata_paths()
   project = "testsupp"
   project_dir = "~/repbox/projects_reg/testsupp"
   #project_dir = file.path("C:/libraries/repbox/projects_reg",project)
@@ -170,7 +170,7 @@ stata.analyse.sup = function(project_dir, return.exist=TRUE, install.missing.mod
     # Run global Stata setup do file
     setup.do.file = system.file("misc/stata_setup.do",package = "repboxStata")
     file.copy(setup.do.file, file.path(project_dir,"repbox/stata"))
-    run.stata.do(file.path(project_dir,"repbox/stata/stata_setup.do"), verbose=FALSE)
+    run_stata_do(file.path(project_dir,"repbox/stata/stata_setup.do"), verbose=FALSE)
   }
 
 
@@ -374,7 +374,7 @@ run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
   cmd.file = file.path(cmd.dir, paste0("postcmd_",do$doid,".csv"))
   if (file.exists(cmd.file)) file.remove(cmd.file)
 
-  res = run.stata.do(new.file,timeout=timeout, verbose=verbose)
+  res = run_stata_do(new.file,timeout=timeout, verbose=verbose)
 
   do$timeout = res$timeout
   do$runtime = res$runtime
