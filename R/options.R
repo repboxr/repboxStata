@@ -19,7 +19,7 @@
 #' @param store.use.data.sig Shall the data signatures after use and other commands that load data be computed and stored. Makes sense to check how data sets change across commands, but takes time.
 #' @param loop.log.max Not yet implemented. How many times shall a command inside a loop be logged at most? Some do files have super long loops. The problem is that this can lead to explosion of the cmd files. We try to adapt the code to stop writing in precmd and postcmd if a command was called too often inside a loop.
 #' @param run.first a character string of dofiles that should be run first. Can be used to run install code first
-repbox.stata.opts = function(use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=25, comment.out.install=TRUE, ...) {
+repbox_stata_opts = function(use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=25, comment.out.install=TRUE, ...) {
   opts = list(
     use.includes=use.includes,
     just.files = just.files,
@@ -49,7 +49,7 @@ rbs.opts = function(name=NULL) {
   if (is.null(name)) {
     # If no options set use default options
     if (is.null(opts)) {
-      opts = repbox.stata.opts()
+      opts = repbox_stata_opts()
       options(repbox.stata.options=opts)
     }
     return(opts)

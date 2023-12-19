@@ -16,13 +16,13 @@ example = function() {
   project_dir = "~/repbox/projects2/testsupp"
   project_dir = "~/repbox/projects_reg/testsupp"
   init.repbox.project(project_dir)
-  opts = repbox.stata.opts(just.extract=FALSE, force=FALSE, extract.reg.info = TRUE)
-  update.repbox.project(project_dir,stata.opts=opts,run.lang = "stata")
+  opts = repbox_stata_opts(just.extract=FALSE, force=FALSE, extract.reg.info = TRUE)
+  update.repbox.project(project_dir,stata_opts=opts,run.lang = "stata")
   stata.analyse.sup(project_dir, opts=opts)
 
   library(repboxMain)
-  opts = repbox.stata.opts(just.extract=TRUE, force=TRUE, overwrite=TRUE)
-  update.repbox.project(project_dir,stata.opts=opts)
+  opts = repbox_stata_opts(just.extract=TRUE, force=TRUE, overwrite=TRUE)
+  update.repbox.project(project_dir,stata_opts=opts)
   rstudioapi::filesPaneNavigate(project_dir)
 }
 
