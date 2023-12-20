@@ -31,10 +31,10 @@ run_stata_do = function(do.file, stata_bin=get_stata_bin(), set.dir=TRUE, nostop
     # Without nostop we must write the code differently (at least on Linux)
     # without explicitly calling the do command
     cmd = paste0(stata_bin,' -b "',file,'"')
-    if (!is.empty(timeout) & use.timeout) {
+    if (!is_empty(timeout) & use.timeout) {
       cmd = paste0("timeout ", timeout," ", cmd)
     }
-  } else if (!is.empty(timeout) & use.timeout) {
+  } else if (!is_empty(timeout) & use.timeout) {
     cmd = paste0(stata_bin,' -b \'do "',file,'"', if(nostop) ', nostop','\'')
     cmd = paste0("timeout ", timeout," ", cmd)
   } else {
@@ -47,7 +47,7 @@ run_stata_do = function(do.file, stata_bin=get_stata_bin(), set.dir=TRUE, nostop
   end.time = Sys.time()
   runtime = as.numeric(Sys.time()-start.time)
 
-  if (!is.empty(timeout) & !is_windows) {
+  if (!is_empty(timeout) & !is_windows) {
     if (res != 0) {
       if (verbose) {
         cat(paste0("\n    stopped due to timeout (", timeout, " seconds.)\n"))
@@ -80,9 +80,11 @@ set_stata_paths = function(stata_bin = NULL,ado_dirs=NULL, base_ado_dir = NULL, 
 }
 
 check_stata_paths_and_ado = function(is_windows = .Platform$OS.type == "windows", check_base_ado_dir = FALSE, on_fail = c("error","warn","msg","silent")[1]) {
-  p = getOption("check_stata_paths_and_ado")
+  restore.point("check_stata_paths_and_ado")
+
+  p = getOption("repbox.stata.paths")
   if (on_fail=="error") {
-    fail_fun = function(...) stop(paste0(...))
+    fail_fun = function(...) stop(paste0(...),call. = FALSE)
   } else if (on_fail=="warn") {
     fail_fun = function(...) warning(paste0(...))
   } else if (on_fail=="msg") {
@@ -126,12 +128,11 @@ check_stata_paths_and_ado = function(is_windows = .Platform$OS.type == "windows"
     for (dir in ado_dirs) {
       exists = exists |
         file.exists(paste0(dir,"/",required_ado)) |
-        file.exists(paste0(dir,"/plus/",required_ado)) |
-        file.exists(paste0(dir,"/plus/",initials,"/",required_ado))
+        file.exists(paste0(dir,"/",initials,"/",required_ado))
     }
     if (!all(exists)) {
       ok = FALSE
-      msg = paste0("\nNot all repbox specific Stata ado files can be found in your specified ado directories:\n\n  ", paste0(ado_dirs, collapse="\n  "), "\n\nPlease call copy_repbox_ado_files(ado_dir) to copy the required ado files.")
+      msg = paste0("\nNot all repbox-specific Stata ado files can be found in your specified ado directories:\n\n  ", paste0(ado_dirs, collapse="\n  "), "\n\nPlease call copy_repbox_ado_files(ado_dir) to copy the required ado files.")
       fail_fun(msg)
     }
   }

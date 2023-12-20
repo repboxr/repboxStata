@@ -39,7 +39,7 @@ stata.repbox.data.use.info = function(run.df, dotab) {
   do_data_load = bind_rows(load.runs, mn %>% filter(need)) %>%
     group_by(base, donum) %>%
     summarize(
-      doid = dotab$doid[donum],
+      doid = dotab$doid[donum][1],
       from.parse = any(parse_run=="parse"),
       from.run = any(parse_run=="run"),
       runs.err = sum(is.true(runerr)),
@@ -50,7 +50,7 @@ stata.repbox.data.use.info = function(run.df, dotab) {
   do_data_save = bind_rows(save.runs, mn %>% filter(make)) %>%
     group_by(base, donum) %>%
     summarize(
-      doid = dotab$doid[donum],
+      doid = dotab$doid[donum][1],
       from.parse = any(parse_run=="parse"),
       from.run = any(parse_run=="run"),
       runs.err = sum(is.true(runerr)),

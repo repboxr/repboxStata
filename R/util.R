@@ -109,7 +109,7 @@ na.val = function(x, na.val=0) {
   x
 }
 
-is.empty = function(x) {
+is_empty = function(x) {
   if (is.null(x) | all(is.na(x))) return(TRUE)
   if (isTRUE(x=="")) return(TRUE)
   return(FALSE)
