@@ -14,6 +14,7 @@ copy_repbox_ado_files = function(ado_dir, overwrite=FALSE) {
   source_files = file.path(source_dir, ado_files)
   dest_files = file.path(ado_dir, ado_files)
 
+  repboxUtils::create_dirs_of_files(dest_files)
   file.copy(source_files, dest_files, overwrite=overwrite)
 
 }
