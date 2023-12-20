@@ -29,7 +29,7 @@ example = function() {
 
 # Currently overlap with analyse.sup
 repbox_stata_static_parcel = function(project_dir, parcels=list()) {
-  parcels = regdb_load_parcels(project_dir, "stata_source", parcels)
+  parcels = repdb_load_parcels(project_dir, "stata_source", parcels)
   source_df = parcels$stata_source$script_source
 
   tab_df = lapply(seq_len(NROW(source_df)), function(i) {
@@ -56,9 +56,9 @@ repbox_stata_static_parcel = function(project_dir, parcels=list()) {
       is_reg = is.regcmd
     )
 
-  regdb_check_data(cmd_df,"stata_cmd")
+  repdb_check_data(cmd_df,"stata_cmd")
   parcels$stata_cmd = list(stata_cmd = cmd_df)
-  regdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repbox","regdb"))
+  repdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repbox","repdb"))
   parcels
 }
 
