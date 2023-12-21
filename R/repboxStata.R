@@ -58,7 +58,7 @@ repbox_stata_static_parcel = function(project_dir, parcels=list()) {
 
   repdb_check_data(cmd_df,"stata_cmd")
   parcels$stata_cmd = list(stata_cmd = cmd_df)
-  repdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repbox","repdb"))
+  repdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repdb"))
   parcels
 }
 
