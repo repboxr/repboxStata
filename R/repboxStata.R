@@ -29,8 +29,13 @@ example = function() {
 
 # Currently overlap with analyse.sup
 repbox_stata_static_parcel = function(project_dir, parcels=list()) {
+  restore.point("repbox_stata_static_parcel")
   parcels = repdb_load_parcels(project_dir, "stata_source", parcels)
   source_df = parcels$stata_source$script_source
+
+  # No Stata do file exists
+  if (NROW(source_df)==0) return(parcels)
+
 
   tab_df = lapply(seq_len(NROW(source_df)), function(i) {
     res = parse.sup.do(file = source_df$file_path[i],project_dir=project_dir, code = source_df$text[[i]])
