@@ -27,45 +27,6 @@ example = function() {
 }
 
 
-# Currently overlap with analyse.sup
-repbox_stata_static_parcel = function(project_dir, parcels=list()) {
-  restore.point("repbox_stata_static_parcel")
-  parcels = repdb_load_parcels(project_dir, "stata_source", parcels)
-  source_df = parcels$stata_source$script_source
-
-  # No Stata do file exists
-  if (NROW(source_df)==0) return(parcels)
-
-
-  tab_df = lapply(seq_len(NROW(source_df)), function(i) {
-    res = parse.sup.do(file = source_df$file_path[i],project_dir=project_dir, code = source_df$text[[i]])
-    tab = res$tab[[1]]
-    tab$file_path = source_df$file_path[[i]]
-    tab
-  }) %>% bind_rows()
-
-  artid = basename(project_dir)
-
-  cmd_df = tab_df %>%
-    mutate(
-      artid = artid,
-      cmdline = txt,
-      in_loop = in_loop==1,
-      in_program = is.true(in.program>=1),
-      num_runs = NA_integer_,
-      num_err_runs = NA_integer_
-    ) %>%
-    rename(
-      prefix_cmd1 = colon_cmd1,
-      prefix_cmd2 = colon_cmd2,
-      is_reg = is.regcmd
-    )
-
-  repdb_check_data(cmd_df,"stata_cmd")
-  parcels$stata_cmd = list(stata_cmd = cmd_df)
-  repdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repdb"))
-  parcels
-}
 
 repbox_project_run_stata = function(project_dir, opts=repbox_stata_opts(), parcels=list(), ...) {
   restore.point("repbox_project_run_stata")
