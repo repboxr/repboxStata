@@ -345,7 +345,6 @@ if "$repbox_cmd_count" == "" {
 else {
   log using \"',incl.log.file,'\", replace name(',log.name,')
 }
-datasignature set, reset
 '),
           new.txt,
           paste0('
@@ -379,7 +378,7 @@ end.injection = function(donum, lines, type,...) {
 }
 
 
-post.injection = function(txt, lines, do, reset.datasig=FALSE, report.datasig=FALSE, report.xtset=FALSE) {
+post.injection = function(txt, lines, do, report.xtset=FALSE) {
   restore.point("post.injection")
   rep.dir = file.path(do$project_dir,"repbox/stata")
   cmdfile = file.path(rep.dir,"cmd", paste0("postcmd_",do$donum,".csv"))
@@ -388,10 +387,8 @@ post.injection = function(txt, lines, do, reset.datasig=FALSE, report.datasig=FA
   inj.txt = paste0(
     '
 qui {
-', ifelse(reset.datasig, 'quietly datasignature set, reset',''), '
-', ifelse(report.datasig, 'quietly datasignature report',''), '
 file open repbox_cmd_file using "', cmdfile,'", write append
-file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';`r(fulldatasignature)\';','"\'',
+file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';;','"\'',
 # Add call xtset to set r(timevar) etc...
 if (report.xtset) '\ncapture xtset',
 '\nfile write repbox_cmd_file `"',
@@ -422,10 +419,8 @@ post.injection.old = function(txt, lines, do, reset.datasig=FALSE, report.datasi
   inj.txt = paste0(
     '
 qui {
-', ifelse(reset.datasig, 'quietly datasignature set, reset',''), '
-', ifelse(report.datasig, 'quietly datasignature report',''), '
 file open repbox_cmd_file using "', cmdfile,'", write append
-file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';`r(fulldatasignature)\';',
+file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';;',
 if (report.xtset) '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'' else ';;','"\'
 file write repbox_cmd_file _n
 file close repbox_cmd_file
@@ -470,7 +465,7 @@ file write repbox_xtset_info_file `"`r(timevar)\';`r(panelvar)\';`r(tdelta)\'"\'
 file write repbox_xtset_info_file _n
 file close repbox_xtset_info_file'),
       inner_code = paste0('\n  save "',file,'", replace
-  global repbox_reg_datasig = r(fulldatasignature)',xtset_code),
+  ',xtset_code),
       code = ifelse(use.if, paste0('\nif (', if.cond,') {',inner_code,"\n}"), inner_code)
     )
 
@@ -509,12 +504,10 @@ save.dta.injection.old = function(txt, lines, do, opts=rbs.opts()) {
                 paste0('
 if (', df$if.cond,') {
   save "',save.dta.files,'", replace
-  global repbox_reg_datasig = r(fulldatasignature)
 }
 '),
                 paste0('
 save "',save.dta.files,'", replace
-global repbox_reg_datasig = r(fulldatasignature)
 ')
   )
 
@@ -735,8 +728,7 @@ injection.use.etc = function(txt, lines=seq_along(txt), do, opts=rbs.opts()) {
   paste0('
 ', end.injection(do$donum,lines, "RUNCMD", do),'
 * ', toupper(tab$cmd[lines]),' INJECTION START
-',post.injection(txt,lines,do=do,reset.datasig=TRUE, report.xtset=TRUE, report.datasig=opts$store.use.data.sig),'
-global repbox_load_datasig = r(fulldatasignature)
+',post.injection(txt,lines,do=do, report.xtset=TRUE),'
 * INJECTION END
 ')
 }
@@ -761,7 +753,6 @@ injection.esttab.etc = function(txt, lines=seq_along(txt), do) {
 ', ext_code,'
 copy "`repbox_corrected_path\'" "',output.file,'"
 ',post.injection(txt,lines,do=do),'
-* global repbox_datasig = r(fulldatasignature)
 * INJECTION END
 ')
 }
@@ -788,7 +779,7 @@ injection.preserve.restore = function(txt, lines=seq_along(txt), do) {
   paste0('
 ', end.injection(do$donum, lines, "RUNCMD",do),'
 * INJECTION START
-',post.injection(txt,lines,do=do,reset.datasig=TRUE, report.xtset=TRUE),'
+',post.injection(txt,lines,do=do, report.xtset=TRUE),'
 * INJECTION END
 ')
 
@@ -806,7 +797,7 @@ injection.reg.simple = function(txt, lines, do, save.graphs=TRUE) {
   restore.point("injection.reg.simple")
   str = paste0('
 ', end.injection(do$donum, lines, "RUNCMD",do),'
-',post.injection(txt,lines,do=do,reset.datasig=FALSE, report.xtset=TRUE),'
+',post.injection(txt,lines,do=do, report.xtset=TRUE),'
 ')
 }
 
@@ -815,7 +806,7 @@ injection.other = function(txt, lines, do, save.graphs=TRUE) {
   restore.point("injection.other")
   str = paste0('
 ', end.injection(do$donum, lines, "RUNCMD",do),'
-',post.injection(txt,lines,do=do,reset.datasig=FALSE),'
+',post.injection(txt,lines,do=do),'
 ')
 }
 
