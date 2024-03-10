@@ -226,7 +226,7 @@ adapt.run.df.error.and.log = function(run.df, project_dir) {
   # Perform some adaptions
   na.rows = is.na(run.df$runerr)
   if (sum(na.rows)>0) {
-    err.na.rows =  na.rows & (!run.df$opens_block & (!run.df$cmd %in% c(c("do","include","run","if","else","end","program","prog","pr","progr","exit"))))
+    err.na.rows =  is.true(na.rows & (!run.df$opens_block & (!run.df$cmd %in% c(c("do","include","run","if","else","end","program","prog","pr","progr","exit")))))
 
     # runerr must be set to FALSE or TRUE (not NA)
     run.df$runerr[na.rows] = err.na.rows[na.rows]

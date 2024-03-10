@@ -16,6 +16,7 @@ add.includes.to.do.df = function(do.df) {
 
     if (NROW(incl.df)==0) return(NULL)
     files = incl.df$shortfile
+    files = gsub("\\","/", files, fixed=TRUE)
     files = gsub('"','',files,fixed=TRUE) %>% trimws()
     ext = tools::file_ext(files)
     rows = ext==""

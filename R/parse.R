@@ -499,9 +499,10 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   if (length(wrows)>0) {
     weight_start = weight_start[wrows]
     rstr = substring(str[wrows], weight_start)
-    weight_end = stri_locate_first_fixed(rstr, "]")[,1]
+    weight_end = stri_locate_first_regex(rstr,"\\](?![a-z0-9A-Z_])")[,1]
+    #weight_end = stri_locate_first_fixed(rstr, "]")[,1]
     use_wrows = !is.na(weight_end)
-    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end-1)
+    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end[use_wrows]-1)
     str[wrows[use_wrows]] = stri_sub(str[wrows[use_wrows]], weight_start[use_wrows])
   }
   #weight = str.between(str,"[","]", not.found=NA) %>% trimws()
