@@ -3,10 +3,10 @@ stata_rename = function(dat, str) {
   str = trimws(str) %>% trimws_around(" ")
   if (has.substr(str,"(")) {
     lhs.str = str %>% str.left.of(")") %>% str.right.of("(") %>% trimws()
-    old = strplit(lhs.str," ")[[1]]
+    old = strsplit(lhs.str," ")[[1]]
 
     rhs.str = str %>% str.right.of(")") %>% str.between("(",")") %>% trimws()
-    new = strplit(rhs.str," ")[[1]]
+    new = strsplit(rhs.str," ")[[1]]
   } else {
     old = str.left.of(str," ")
     new = str.right.of(str," ")
