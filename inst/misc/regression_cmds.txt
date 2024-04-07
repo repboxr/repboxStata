@@ -81,4 +81,5 @@ svar
 vec
 dfactor
 ppmlhdfe
+svyreg
 ###cgmwildboot
