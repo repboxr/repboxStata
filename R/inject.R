@@ -239,6 +239,15 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   }
 
+  # Typically we want to store values of defined scalar values
+  # in the run that also stores regression information
+  if (isTRUE(opts$extract.scalar.vals)) {
+    lines = reg.rows = setdiff(which(tab$cmd %in% "scalar"), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.scalar(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
 
   # Comment out certain commands
 
@@ -800,6 +809,46 @@ injection.reg.simple = function(txt, lines, do, save.graphs=TRUE) {
 ',post.injection(txt,lines,do=do, report.xtset=TRUE),'
 ')
 }
+
+injection.scalar = function(txt, lines, do, save.graphs=TRUE) {
+  restore.point("injection.scalar")
+
+  str = str.right.of(txt,"scalar", not.found = rep(NA_character_, length(lines))) %>% trimws()
+
+  var = str.left.of(str, "=", not.found = rep(NA_character_, length(lines))) %>% trimws()
+
+  val = str.right.of(str, "=", not.found = rep(NA_character_, length(lines))) %>% trimws()
+
+  use = !is.na(var)
+
+  scalar.txt = rep("",length(lines))
+  if (sum(use)>0) {
+    rep.dir = file.path(do$project_dir,"repbox/stata")
+    file = file.path(rep.dir,"cmd", paste0("scalars_",do$donum,".csv"))
+    tab = do$tab[[1]]
+    scalar.txt[use] = paste0(
+      '
+capture qui {
+file open repboX_scaLars_filE using "', file,'", write append
+file write repboX_scaLars_filE `"', do$donum,';', lines[use],';',var[use],';"\'','
+file write repboX_scaLars_filE (',var[use],') _n
+file close repboX_scaLars_filE
+',# Close qui
+'\n}\n'
+    )
+  }
+
+
+
+  # Normal injection
+  inj.txt = paste0('
+', end.injection(do$donum, lines, "RUNCMD",do),'
+',post.injection(txt,lines,do=do),'
+', scalar.txt)
+  inj.txt
+
+}
+
 
 
 injection.other = function(txt, lines, do, save.graphs=TRUE) {
