@@ -151,7 +151,7 @@ extract.stata.scalars = function(project_dir) {
 # more complex.
 add.has.data.to.run.df = function(run.df) {
   restore.point("add.has.data.to.run.df")
-  new.dat.cmd = c("use","u", "clear","import","insheet","guse","gzuse")
+  new.dat.cmd = c("use","u","us", "clear","import","insheet","guse","gzuse")
   add.dat.cmd = c("merge","joinby")
   run.df$data.cmd.type = ""
   rows = run.df$cmd %in% new.dat.cmd

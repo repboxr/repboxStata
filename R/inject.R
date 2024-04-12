@@ -25,6 +25,7 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     !is.na(tab$using) |
     !is.na(tab$saving) |
     (tab$cmd %in% c("graph","gr","gra") & tab$cmd2 %in% c("export","save")) |
+    (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save","use")) |
     (tab$cmd %in% "adopath" & tab$cmd2 %in% c("+")) |
     (tab$cmd %in% c("putexcel") & tab$cmd2 %in% c("set")) |
     (tab$cmd == "cd" & trimws(tab$txt)!="cd")
@@ -628,6 +629,7 @@ inject.path.correction.pre = function(txt, lines=seq_along(txt), do) {
   create =  cmd %in%
     c("save","saveold", "save","sav","sa","export") |
     (cmd %in% c("graph","gr","gra") & tab$cmd2 %in% c("export","save")) |
+    (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save")) |
     (cmd %in% c("putexcel") & tab$cmd2 %in% c("set"))
 
   type = case_when(

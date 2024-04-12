@@ -10,6 +10,7 @@ get.stata.default.file.extension = function(tab) {
     cmd == "import" & startsWith(arg_str,"sas") ~ "sas7bdat",
     cmd == "import" & startsWith(arg_str,"spss") ~ "sav",
     cmd == "shp2dta" ~ "shp",
+    cmd %in% c("estimates","est","estim","estimate") ~ "ster",
     TRUE ~ ""
   )
 }
@@ -122,6 +123,7 @@ replace.files.and.paths.with.ph = function(tab, ph, txt=tab$txt) {
   rows = which(
     tab$cmd %in% c("import","export") |
     (tab$cmd %in% c("graph","gr","gra") & tab$cmd2 %in% c("export","save")) |
+    (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save","use")) |
     (tab$cmd %in% c("putexcel") & tab$cmd2 %in% c("set")) |
     (tab$cmd %in% "adopath" & tab$cmd2 %in% c("+"))
   );
