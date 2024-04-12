@@ -172,7 +172,10 @@ repbox_project_run_stata = function(project_dir, opts=repbox_stata_opts(), parce
     arrange(donum)
   saveRDS(dotab, file.path(repbox.dir,"dotab.Rds"))
 
-  res = repbox_stata_extract(project_dir, dotab)
+  res = repbox_stata_extract(project_dir, dotab, opts=opts)
+
+  parcels$stata_scalar = list(stata_scalar = res$scalar_df)
+
   invisible(parcels)
 }
 
@@ -211,6 +214,16 @@ repbox_stata_extract = function(project_dir, dotab = readRDS.or.null(file.path(p
 
   if (opts$extract.reg.info) {
     regtab = extract.stata.regs(project_dir = project_dir, run.df = res$run.df, dotab=dotab)
+  }
+
+  if (opts$extract.scalar.vals) {
+    # Storing of scalar values is newer.
+    # So we directly store it as a parcel
+    restore.point("ishfhsufhd")
+    scalar_df = extract.stata.scalars(project_dir)
+    scalar_parcel = list(stata_scalar=list(stata_scalar=scalar_df))
+    repboxDB::repdb_save_parcels(scalar_parcel, file.path(project_dir, "repdb"), check=TRUE)
+    rep.res$scalar_df = scalar_df
   }
 
   return(invisible(rep.res))

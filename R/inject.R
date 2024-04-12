@@ -830,7 +830,7 @@ injection.scalar = function(txt, lines, do, save.graphs=TRUE) {
       '
 capture qui {
 file open repboX_scaLars_filE using "', file,'", write append
-file write repboX_scaLars_filE `"', do$donum,';', lines[use],';',var[use],';"\'','
+file write repboX_scaLars_filE `"', do$donum,';', lines[use],';`repbox_local_cmd_count\';',var[use],';"\'','
 file write repboX_scaLars_filE (',var[use],') _n
 file close repboX_scaLars_filE
 ',# Close qui

@@ -57,7 +57,8 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
 extract.stata.run.cmds = function(project_dir) {
   restore.point("extract.stata.run.cmds")
   dir = file.path(project_dir, "repbox/stata/cmd")
-  files = list.files(dir,glob2rx("*.csv"),full.names = FALSE)
+
+  files = list.files(dir,"^(postcmd|precmd).*csv$",full.names = FALSE)
 
   pre.files = paste0(dir,"/",files[startsWith(files,"precmd_")])
   str = lapply(pre.files, readLines, warn=FALSE) %>% unlist()
@@ -114,6 +115,31 @@ extract.stata.run.cmds = function(project_dir) {
 
   df
 }
+
+
+extract.stata.scalars = function(project_dir) {
+  restore.point("extract.stata.scalars")
+  dir = file.path(project_dir, "repbox/stata/cmd")
+  files = list.files(dir,"^(scalar).*csv$",full.names = TRUE)
+
+  str = lapply(files, readLines, warn=FALSE) %>% unlist()
+
+  donum = as.integer(str.left.of(str,";"))
+  str = str.right.of(str,";")
+  line = as.integer(str.left.of(str,";"))
+  str = str.right.of(str,";")
+  runid = as.integer(str.left.of(str,";"))
+  str = str.right.of(str,";")
+  var = str.left.of(str,";")
+  str = str.right.of(str,";")
+  val = str
+  num_val = suppressWarnings(as.numeric(val))
+
+  scalar.df = as_tibble(list(script_num=donum, runid=runid,line=line, scalar_var=var, scalar_val=val, scalar_num_val=num_val))
+
+  scalar.df
+}
+
 
 # This functions tries to assess for every row of run.df
 # whether the supposed data set is available.
