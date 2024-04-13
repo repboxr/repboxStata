@@ -59,17 +59,25 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list()) {
       artid = first(artid),
       runtype = "org",
       runs = n(),
-      err_runs = sum(runerr),
+      ok_runs = sum(is.true(has.data & !runerr)),
+      no_dat_runs = sum(!is.true(has.data)),
+      err_runs = sum(runerr & is.true(has.data)),
       reg_runs = sum(is.regcmd),
-      err_reg_runs = sum(is.regcmd & runerr),
-      ok_reg_runs = reg_runs-err_reg_runs,
+      no_dat_reg_runs = sum(is.regcmd & !is.true(has.data)),
+      err_reg_runs = sum(is.regcmd & runerr & is.true(has.data)),
+      ok_reg_runs = reg_runs-err_reg_runs-no_dat_reg_runs,
       start_time = first(start_time[!is.na(start_time)]),
       end_time = last(end_time[!is.na(end_time)]),
       run_sec = time.diff(start_time, end_time)
     )
 
+
+  if (run_info$no_dat_runs >0) {
+    repbox_problem(msg = paste0(run_info$no_dat_runs, " of the ", run_info$runs, " run commands had a missing data set."), type = "stata_no_dat",fail_action = "msg")
+  }
+
   if (run_info$err_runs >0) {
-    repbox_problem(msg = paste0(run_info$err_runs, " of the ", run_info$runs, " run commands threw an error."), type = "stata_err",fail_action = "msg")
+    repbox_problem(msg = paste0(run_info$err_runs, " of the ", run_info$runs, " run commands without missing data threw an error."), type = "stata_err",fail_action = "msg")
   }
 
   parcels$stata_run_info = list(stata_run_info=run_info)
@@ -130,20 +138,26 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
   #parcels$stata_run_cmd = list(stata_run_cmd = run_df)
   #parcels$stata_run_log = list(stata_run_log = run_df)
 
-  # Store some aggregate information on the run
   run_info = run_df %>%
     summarize(
       artid = first(artid),
       runtype = "reg",
       runs = n(),
-      err_runs = sum(runerr),
+      ok_runs = sum(is.true(has.data & !runerr)),
+      no_dat_runs = sum(!is.true(has.data)),
+      err_runs = sum(runerr & is.true(has.data)),
       reg_runs = sum(is.regcmd),
-      err_reg_runs = sum(is.regcmd & runerr),
-      ok_reg_runs = reg_runs-err_reg_runs,
+      no_dat_reg_runs = sum(is.regcmd & !is.true(has.data)),
+      err_reg_runs = sum(is.regcmd & runerr & is.true(has.data)),
+      ok_reg_runs = reg_runs-err_reg_runs-no_dat_reg_runs,
       start_time = first(start_time[!is.na(start_time)]),
       end_time = last(end_time[!is.na(end_time)]),
       run_sec = time.diff(start_time, end_time)
     )
+
+
+
+
 
 
   org_run_info = parcels$stata_run_info$stata_run_info
@@ -152,12 +166,16 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
     if (run_info$err_runs >0) {
       repbox_problem(msg = paste0("The Stata run had ", run_info$err_runs, " commands that threw an error"), type = "stata_err",fail_action = "msg")
     }
+    if (run_info$no_dat_runs >0) {
+      repbox_problem(msg = paste0(run_info$no_dat_runs, " of the ", run_info$runs, " run commands had a missing data set."), type = "stata_no_dat",fail_action = "msg")
+    }
+
   } else {
     if (run_info$err_runs > org_run_info$err_runs) {
       repbox_problem(msg = paste0("The Stata run which stored regression information had more errors than the original run."), type = "stata_reg_err",fail_action = "msg")
     } else if (run_info$runs != org_run_info$runs) {
       repbox_problem(msg = paste0("The Stata run which stored regression information executed a different number of commands than the original run."), type = "stata_reg_runs_diff",fail_action = "msg")
-    } else if (run_info$err_runs < org_run_info$runs) {
+    } else if (run_info$err_runs < org_run_info$err_runs) {
       repbox_problem(msg = paste0("The Stata run  which stored regression information had fewer errors than the original run."), type = "stata_reg_err",fail_action = "msg")
     }
   }

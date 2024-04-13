@@ -115,7 +115,8 @@ static.do.use.dta.info = function(do, ph.df=do$ph[[1]], tab=do$tab[[1]], project
   if (any(duplicated(dta.bases))) {
     dupl = dta.bases[duplicated(dta.bases)]
     rows = dta.bases %in% dupl
-    cat(paste0("\nWarning: There are duplicated data files with the same name in ", dir,". The repbox code may not handle this correctly. Please ensure that each dta file only appears once in your supplement. The following files are duplicated:\n\n", paste0(dta.files[rows], collapse="\n")))
+    repbox_problem(type = "data_files_same_name", fail_action="msg", msg=
+paste0("\nWarning: There are duplicated data files with the same name in ", dir,". The repbox code may not handle this correctly. Please ensure that each dta file only appears once in your supplement. The first duplicated files is:\n\n", paste0(dta.files[rows][1], collapse="\n")))
   }
 
   dtacmd.df$dta.file = dta.files[match(dtacmd.df$dta.base, dta.bases)]

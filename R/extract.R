@@ -160,6 +160,17 @@ add.has.data.to.run.df = function(run.df) {
   run.df$data.cmd.type[rows] = "add"
   run.df$has.data = NA
 
+  # Update: 2024-04-13 We ignore errors in clear commands...
+  # They can just arise because we changed clear all to clear
+  # Then wrongly we might get missing data labels
+  clear_err_rows = which(run.df$cmd == "clear" & run.df$runerr)
+  run.df$runerr[clear_err_rows] = FALSE
+  run.df$runerrcode[clear_err_rows] = 0
+  run.df$runerrmsg[clear_err_rows] = ""
+
+
+
+
   oldrootdonum = -1
 
   # Temporary fix: Don't know yet why
