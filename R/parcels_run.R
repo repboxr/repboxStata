@@ -211,7 +211,9 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
   new_cols = c("num_reg_lines", "has_parse_err",  "is_included", "does_include", "timeout", "runtime")
   dotab = rename.cols(dotab, old_cols, new_cols)
 
-  dotab$file_path = str.right.of(dotab$file,paste0(dotab$project_dir,"/mod/"))
+  artid = basename(project_dir)
+  dotab$file_path = str.right.of(normalizePath(dotab$file, winslash = "/"),paste0("/",artid,"/mod/"))
+  #dotab$file_path = str.right.of(normalizePath(dotab$file),paste0(normalizePath(dotab$project_dir),"/mod/"))
   dotab$analyzed = rep(TRUE, NROW(dotab))
   do_df = left_join(do_df, dotab, by="file_path") %>%
     mutate(analyzed = na.val(analyzed, FALSE))
