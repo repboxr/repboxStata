@@ -22,6 +22,7 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
   run.df = left_join(run.df, select(tab, donum, line, orgline, cmd, is.regcmd, in.program, opens_block), by=c("donum", "line"))
   run.df = arrange(run.df, rootdonum, counter, donum,line)
   run.df = adapt.run.df.error.and.log(run.df, project_dir)
+  run.df = adapt.run.df.for.timeout(run.df, dotab, project_dir, opts=opts)
   run.df = add.has.data.to.run.df(run.df)
 
   run.df = extract.stata.do.output(project_dir, run.df)
@@ -525,5 +526,21 @@ extract.stata.do.output = function(project_dir, run.df) {
   return(run.df)
 }
 
+# If there is a timeout: we will change the error message of the
+# last command to "Timeout when running do file"
+adapt.run.df.for.timeout = function(run.df, dotab, project_dir, opts) {
+  restore.point("adapt.run.df.for.timeout")
+  donums = dotab$donum[dotab$timeout]
+  # No timeout
+  if (length(donums)==0) return(run.df)
+  rows = which(run.df$donum %in% donums & is.na(run.df$runerrcode))
+  # Only set last row of each do file as timeout run
+  rows = rows[!duplicated(run.df$donum[rows], fromLast=TRUE)]
+
+  run.df$runerrcode[rows] = -1L
+  run.df$runerrmsg[rows] = paste0("Timeout after ", opts$timeout, " sec. when running do file")
+  repbox_problem(type="timeout", msg=paste0("Timeout (", opts$timeout," sec.) in ", length(donums)," do files."),fail_action = "msg")
+  run.df
+}
 
 
