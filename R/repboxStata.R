@@ -159,6 +159,8 @@ repbox_project_run_stata = function(project_dir, opts=repbox_stata_opts(), parce
     # The include did not run. Run manually instead
     if (!file.exists(log.file)) {
       repbox_problem(type="included_do_no_log", msg=paste0("\n run ", do$dofile, " (no existing log even though it should have been included)\n"), fail_action = "msg")
+    }
+    if (!file.exists(log.file) & opts$rerun.failed.included.do) {
       do$is.included = FALSE
       do = stata.inject.and.run(do, opts=opts,start.time = run.start.time)
       return(do)

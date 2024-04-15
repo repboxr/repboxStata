@@ -125,6 +125,11 @@ adapt.incl.df.for.stata.vars = function(incl.df, project_dir) {
   file_str = incl.df$shortfile[rows]
   file_str = gsub('"','', file_str, fixed = TRUE)
 
+
+  # Add repbox_ prefix t do file basename
+  file_str = stringi::stri_replace_last_regex(file_str,"([^\\\\/:]+\\.(do|DO|Do))$","repbox_$1")
+
+
   cmd = incl.df$cmd[rows]
   default_ext = "do"
 
