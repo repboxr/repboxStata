@@ -653,67 +653,6 @@ repbox_correct_path "',type,'" "`repbox_source_path\'" "', default_ext,'" "',sup
   code
 }
 
-
-# Inject dynamic path correction code
-# Old code using R
-inject.path.correction.pre.using.r = function(txt, lines=seq_along(txt), do) {
-  restore.point("inject.path.correction")
-  #if (do$doid == "elaborations_money_partners_strangers") stop()
-  project_dir = do$project_dir
-  sup.dir = file.path(project_dir,"mod")
-
-  tab = do$tab[[1]][lines,]
-  default_ext = get.stata.default.file.extension(tab)
-
-  txt
-  r.script = file.path(project_dir, "repbox/stata/find_files.R")
-  tab = do$tab[[1]][lines,]
-  ph = do$ph[[1]]
-
-  res = replace.files.and.paths.with.ph(tab,ph=ph)
-  ph.txt = res$txt
-  fph = res$ph
-  if (any(duplicated(fph$line))) {
-    restore.point("inject.path.correction.dupl")
-    stop("Multiple file paths in a command cannot yet be dealt with.")
-  }
-
-  content = fph$content
-
-  #content = gsub("\\","/",content, fixed=TRUE)
-  content = gsub('"','', content, fixed = TRUE)
-
-  # Don't remove ' here. This will cause problems for
-  # local variables
-  #content = gsub("'",'', content, fixed = TRUE)
-
-  file_str = rep("", length(txt))
-  file_str[fph$line] = content
-  # For saving option we don't pass the actual command but "saving"
-  cmd = ifelse(is.na(tab$saving), tab$cmd, "saving")
-
-  # We need to replace \ with / in Stata since otherwise
-  # paths with spliced-in variables that have a \
-  # will not be handled correctly
-  code = paste0(
-    '
-local repbox_source_path = subinstr("',file_str,'","\\","/",.)
-rcall vanilla: source("', r.script,'"); repbox_corrected_path = find.path("`repbox_source_path\'", "',sup.dir,'", "', cmd,'", "', default_ext,'", "`c(pwd)\'")')
-
-  #new.content = '"`r(repbox_corrected_path)\'"'
-  #fph$content = new.content
-
-  # Need to also save r(repbox_corrected_path) in a local
-  # stata variable if I want to access it after the main command
-  # is run.
-  txt = paste0(code, '
-local repbox_corrected_path = "`r(repbox_corrected_path)\'"
-display "`r(repbox_corrected_path)\'"', "\n"
-               #replace.ph.keep.lines(ph.txt, fph)
-  )
-  txt
-}
-
 # This replaces the cmd e.g.
 # use mydata, clear -> use "`r(repbox_corrected_path)'", clear
 inject.path.correction.change.cmd = function(txt, lines=seq_along(txt), do) {

@@ -121,17 +121,29 @@ adapt.incl.df.for.stata.vars = function(incl.df, project_dir) {
   # Add dynamic path correction
 
   sup.dir = file.path(project_dir,"mod")
-  r.script = file.path(project_dir, "repbox/stata/find_files.R")
 
   file_str = incl.df$shortfile[rows]
   file_str = gsub('"','', file_str, fixed = TRUE)
 
   cmd = incl.df$cmd[rows]
   default_ext = "do"
+
+  type = "file_exists"
+  #  TO DO: 2nd sup.dir should be do.dir but we don't see here directly the
+  # directory of the calling do file.
   code = paste0(
     '
-local repbox_source_path = subinstr("',file_str,'","\\","/",.)
-rcall vanilla: source("', r.script,'"); repbox_corrected_path = find.repbox.do.file("`repbox_source_path\'", "',sup.dir,'", "', cmd,'", "', default_ext,'", "`c(pwd)\'")')
+  local repbox_source_path = subinstr("',file_str,'","\\","/",.)
+
+  repbox_correct_path "',type,'" "`repbox_source_path\'" "', default_ext,'" "',sup.dir,'" "', sup.dir ,'"\n'
+  )
+
+# Old code using R to detect file
+
+#   code = paste0(
+#     '
+# local repbox_source_path = subinstr("',file_str,'","\\","/",.)
+# rcall vanilla: source("', r.script,'"); repbox_corrected_path = find.repbox.do.file("`repbox_source_path\'", "',sup.dir,'", "', cmd,'", "', default_ext,'", "`c(pwd)\'")')
 
   txt = paste0(code, '
 display "`r(repbox_corrected_path)\'"', "\n")
