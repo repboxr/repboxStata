@@ -570,6 +570,7 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   }
 
 
+  tab = tab.repair.colon.local(tab)
   tab = tab.repair.input.cmds(tab)
   tab = tab.replace.texdoc.do(tab)
   tab = tab.add.block.end(tab)
@@ -791,6 +792,33 @@ repbox.re.cmdlines.to.tab = function(txt) {
   txt = sep.lines(txt)
 
   tab = normalized.cmdlines.to.tab(txt, ph.df)
+  tab
+}
+
+
+# Commands like
+# local x : var1
+# global x : var1
+# should have local or global as cmd not var1
+tab.repair.colon.local = function(tab) {
+  restore.point("tab.colon.local")
+  if (NROW(tab)==0) return(tab)
+
+  str = tab$colon1
+  pos = stri_locate_first_regex(str, "(?<=(^|[ \t]))[ ]*(local|global)[ \t]")
+  rows = which(!is.na(pos[,1]))
+  if (length(rows)==0) return(tab)
+
+  pos = pos[rows,,drop=FALSE]
+  str = str[rows]
+  lhs = stri_sub(str,1,pos[,1]-1) %>% trimws()
+  cmd = stri_sub(str,pos[,1], pos[,2]) %>% trimws()
+  rhs = stri_sub(str,pos[,2]+1) %>% trimws()
+
+  tab$cmd[rows] = cmd
+  tab$colon1[rows] = lhs
+  tab$arg_str[rows] = paste0(rhs," ", tab$arg_str[rows]) %>% trimws()
+
   tab
 }
 
