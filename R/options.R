@@ -22,7 +22,7 @@
 #' @param run.first a character string of dofiles that should be run first. Can be used to run install code first
 #' @param rerun.failed.included.do Shall do files that are included in other do files (or called via do) run again separately if no log file exists. Default is TRUE, but if initial run failed the 2nd separate run may not work correctly since data sets or variable might be missing.
 repbox_stata_opts = function(
-  use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, extract.scalar.vals = extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=25, comment.out.install=TRUE, check.stata.paths.and.ado=TRUE,rerun.failed.included.do=TRUE, ...) {
+  use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, extract.scalar.vals = extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=10000, comment.out.install=TRUE, check.stata.paths.and.ado=TRUE,rerun.failed.included.do=TRUE, ...) {
   opts = list(
     use.includes=use.includes,
     just.files = just.files,
