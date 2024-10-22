@@ -22,7 +22,9 @@ repbox.normalize.do = function(txt=readLines(do.file), do.file=NULL) {
   s$do.file = do.file
 
   pos.df = s$pos.df
-  pos.df$str = substring(txt, pos.df$start,pos.df$end)
+  # UPDATE: stri_sub handles encoding problems better than substring
+  pos.df$str = stringi::stri_sub(txt, pos.df$start,pos.df$end)
+  #pos.df$str = str = substring(txt, pos.df$start,pos.df$end)
 
   #restore.point.options(display.restore.point = TRUE)
   r = 0
@@ -43,7 +45,13 @@ repa.pos.df = function(txt, oline.offset=0) {
   loc.all = function(pattern,type=pattern,fixed=TRUE, perl=!fixed) {
     restore.point("loc.all")
     #pos = gregexpr(pattern, txt, fixed=fixed)[[1]]
-    pos = str.locate.all(ltxt, pattern, fixed=fixed,perl=perl)[[1]]
+    if (!fixed) {
+      pos = stri_locate_all_regex(ltxt, pattern, omit_no_match = TRUE)[[1]]
+    } else {
+      pos = stri_locate_all_fixed(ltxt, pattern, omit_no_match = TRUE)[[1]]
+    }
+    # stringi code above is faster and more robust to utf-8 issues
+    #pos = str.locate.all(ltxt, pattern, fixed=fixed,perl=perl)[[1]]
     if (NROW(pos)==0) return(NULL)
     as_tibble(list(type=type, pattern=pattern, start=pos[,1], end=pos[,2]))
   }
@@ -65,9 +73,9 @@ repa.pos.df = function(txt, oline.offset=0) {
     loc.all('"', "quote",fixed=TRUE),
     loc.all('\n[ \t]*\\*',"nl_star",fixed=FALSE),
     loc.all(';[\n \t]*\\*',"semi_star",fixed=FALSE),
-    loc.all('#[ \t]*((d)||(de)|(del)|(deli)|(delim)|(delimit))[ \t]*;',"del_semi",fixed=FALSE),
-    loc.all('#[ \t]*((d)||(de)|(del)|(deli)|(delim)|(delimit))[ \t]+cr',"del_nl",fixed=FALSE),
-    loc.all('#[ \t]*((d)||(de)|(del)|(deli)|(delim)|(delimit))[ \t]*\n',"del_switch",fixed=FALSE),
+    loc.all('#[ \t]*((d)|(de)|(del)|(deli)|(delim)|(delimit))[ \t]*;',"del_semi",fixed=FALSE),
+    loc.all('#[ \t]*((d)|(de)|(del)|(deli)|(delim)|(delimit))[ \t]+cr',"del_nl",fixed=FALSE),
+    loc.all('#[ \t]*((d)|(de)|(del)|(deli)|(delim)|(delimit))[ \t]*\n',"del_switch",fixed=FALSE),
     #loc.all('#[ \t]*del(imit)?[ \t]*;',"del_semi",fixed=FALSE),
     #loc.all('#[ \t]*del(imit)?[ \t]+cr',"del_nl",fixed=FALSE),
   ) %>%
@@ -139,7 +147,6 @@ repa.next.token = function(s) {
     if (type == "dquote_start") return(repa.start.dquote(s))
     return(s)
   } else if (s$mode == "quote") {
-    # TO DO: possible throw error on newline
     if (type == "nl" & s$delimit=="nl")
       return(repa.end.quote.with.nl(s))
     if (type != "quote") return(s)
@@ -148,6 +155,11 @@ repa.next.token = function(s) {
     if (type != s$delimit) return(s)
     return(repa.end.cl(s))
   } else if (s$mode == "dquote") {
+    #restore.point("double_quote_mode")
+    #cat("\nmode==dquote  type==,",type)
+    # Also compound quotes are sometimes ended with a newline
+    if (type == "nl" & s$delimit=="nl")
+      return(repa.end.dquote.with.nl(s))
     if (type == "dquote_start") {
       s$level = s$level+1
       return(s)
@@ -277,6 +289,20 @@ repa.end.dquote = function(s) {
   return(s)
 }
 
+# Compound quotes `" "' have similar inconsistent handling as quotes
+# with respect to end of lines
+# (see repa.end.quote.with.nl)
+repa.end.dquote.with.nl = function(s) {
+  restore.point("repa.end.dquote.with.nl")
+  s = repa.write.ph(s,"dquote")
+  s$start = s$pos.df$end[s$row]+1
+  s$mode = "cmd"
+  s$line = s$line+1
+  s$start.orgline = s$orgline
+  return(s)
+}
+
+
 # /* ... */ comment
 repa.start.co = function(s) {
   restore.point("repa.start.co")
@@ -398,16 +424,20 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
     stop("Parsing error bracket place holders are duplicated. Need to correct placeholder block code.")
   }
 
-  # TODO: DEAL WITH MATA CODE. MARK AND IGNORE MATA BLOCKS
-  # Find Mata blocks
-  if (any(has.substr(txt,"mata"))) {
-    pho = blocks.to.placeholder(txt, start="{", end="}",before.start = c("mata ","mata"),ph.df = ph.df, ph.prefix="#~mata_pa")
-    txt = pho$str; ph.df = pho$ph.df
 
-    txt = trimws(sep.lines(txt))
-    pos = start.end.line.blocks(txt,start = "mata",end="end",multi.end = TRUE)
-    pho = line.blocks.to.placeholder(txt,pos,ph.df = ph.df, ph.prefix="#mata_lb")
+  # Find Mata blocks and replace with placeholder
+  mata_pos = locate_mata_blocks(txt)
+  if (NROW(mata_pos)>0) {
+    pho = pos.to.placeholder(txt, mata_pos,ph.prefix = "#~mata_pa ", ph.df=ph.df)
     txt = pho$str; ph.df = pho$ph.df
+    # pho = blocks.to.placeholder(txt, start="{", end="}",before.start = c("mata ","mata"),ph.df = ph.df, ph.prefix="#~mata_pa")
+    #
+    # txt = pho$str; ph.df = pho$ph.df
+    #
+    # txt = trimws(sep.lines(txt))
+    # pos = start.end.line.blocks(txt,start = "mata",end="end",multi.end = TRUE)
+    # pho = line.blocks.to.placeholder(txt,pos,ph.df = ph.df, ph.prefix="#mata_lb")
+    # txt = pho$str; ph.df = pho$ph.df
   }
 
 
@@ -632,29 +662,6 @@ extract.if.in.using = function(str) {
 
 }
 
-stepwise.blocks.to.placeholder = function(txt, ph.df, stop.on.error=FALSE) {
-  restore.point("stepwise.blocks.to.placeholder")
-  # Set brackets () into ph
-  txt = sep.lines(txt)
-  str = txt
-  for (i in seq_len(NROW(txt))) {
-    pho = try(blocks.to.placeholder(txt[i], start=c("("), end=c(")"), ph.prefix = "#~br"),silent = TRUE)
-    if (is(pho,"try-error")) {
-      if (stop.on.error) {
-        stop(paste0(as.character(pho),"\n. Stopped function."))
-      } else {
-        warning(paste0(as.character(pho),"\n. Keep problematic code line as it is."))
-        next
-      }
-    } else {
-      str[i] = pho$str
-      ph.df = pho$ph.df
-    }
-  }
-
-  list(str = merge.lines(str), ph.df = ph.df)
-}
-
 normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   restore.point("normalized.cmdlines.with.ph.to.tab")
 
@@ -822,15 +829,48 @@ tab.repair.colon.local = function(tab) {
   tab
 }
 
-
+# Stata input commands are nasty to parse.
+# Consider the following valid do file code
+#
+# input str8 x
+# hello
+# list
+# end
+#
+#
+# input str4 z
+# hi
+# list
+#
+# The first input command is relatively nice, since it ends with "end"
+# yet the second command generating z is also valid. It just takes as
+# many inputs as there are rows in the data set before stopping
+# the execution
+# Whether list is then treated as a member of z or already the next
+# command depends on whether data set in memory just has one observation
+# or more.
 tab.repair.input.cmds = function(tab) {
   restore.point("tab.repair.input.cmds")
   starts = which(tab$cmd %in% c("input","inp","inpu"))
   if (length(starts)==0) return(tab)
-  ends = which(tab$cmd == "end")
+  # a list of all stata cmds with at least 3 letters
+  cmds = readRDS(system.file("misc/cmd_list.Rds",package = "repboxStata"))
+  tab$known_cmd = tab$cmd %in% cmds
+  #ends = which(tab$cmd == "end")
   ignore = rep(FALSE,NROW(tab))
   for (s in starts) {
-    end = min(ends[ends > s])
+    # Find next row in tab that has a known proper Stata cmd
+    # "end" is also included in cmds
+    rows = which(tab$known_cmd & (1:NROW(tab))>s)
+    if (length(rows)>0) {
+      end = min(rows)
+      if (tab$cmd[end]!="end") {
+        end = end-1
+      }
+    } else {
+      end = NROW(tab)
+    }
+
     tab$txt[s] = paste0(tab$txt[s:end], collapse="\n")
     ignore[setdiff(s:end,s)] = TRUE
   }
@@ -844,6 +884,8 @@ tab.add.in.program = function(tab) {
   starts = which(tab$cmd %in% c("program","prog","pr","progr") & !is.true(tab$cmd2 %in% c("drop","dir","list")))
   ends = which(tab$cmd == "end")
   for (s in starts) {
+
+
     end = min(ends[ends > s])
     tab$in.program[(s+1):(end-1)] = 1
     tab$in.program[s] = 2
@@ -854,7 +896,7 @@ tab.add.in.program = function(tab) {
 
 tab.add.block.end = function(tab) {
   restore.point("tab.add.in.block")
-  tab$block_end_line = NA_integer_
+  tab$block_end_line = rep(NA_integer_,NROW(tab))
   starts = which(tab$opens_block)
   ends = which(tab$closes_block)
 
@@ -866,7 +908,7 @@ tab.add.block.end = function(tab) {
 
 tab.add.in.loop = function(tab) {
   restore.point("tab.add.in.loop")
-  tab$in_loop = 0
+  tab$in_loop = rep(0, NROW(tab))
   starts = which(tab$cmd %in% c("foreach","forvalues","forv","forva","forval", "forvalu","forvalue", "while"))
   for (s in starts) {
     end_line = tab$block_end_line[s]

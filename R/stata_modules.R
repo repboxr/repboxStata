@@ -30,7 +30,7 @@ tab.add.cmd.installed = function(tab) {
   tab$colon_cmd1 = str.left.of(tab$colon1," ") %>% str.left.of(",")
   tab$colon_cmd2 = str.left.of(tab$colon2," ") %>% str.left.of(",")
   tab$colon_cmd3 = str.left.of(tab$colon3," ") %>% str.left.of(",")
-  tab$cmd.installed = TRUE
+  tab$cmd.installed = rep(TRUE,NROW(tab))
   all.cmds = setdiff(unique(c(tab$cmd, tab$colon_cmd1, tab$colon_cmd2, tab$colon_cmd3)),NA)
 
   idf = stata.is.cmd.installed(all.cmds)

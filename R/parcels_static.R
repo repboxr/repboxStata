@@ -1,7 +1,7 @@
 # Performs static Stata code analysis and stores results as parcel
 # stata_cmd
 
-repbox_stata_static_parcel = function(project_dir, parcels=list()) {
+repbox_stata_static_parcel = function(project_dir, parcels=list(), opts=NULL) {
   restore.point("repbox_stata_static_parcel")
 
   parcels = repdb_load_parcels(project_dir, "stata_source", parcels)
@@ -12,9 +12,9 @@ repbox_stata_static_parcel = function(project_dir, parcels=list()) {
 
 
   tab_df = lapply(seq_len(NROW(source_df)), function(i) {
-    res = parse.sup.do(file = source_df$file_path[i],project_dir=project_dir, code = source_df$text[[i]])
+    res = parse.sup.do(file = source_df$file_path[i],project_dir=project_dir, code = source_df$text[[i]],stop.on.error = isTRUE(opts$stop.on.error))
     tab = res$tab[[1]]
-    tab$file_path = source_df$file_path[[i]]
+    tab$file_path = rep(source_df$file_path[[i]],NROW(tab))
     tab
   }) %>% bind_rows()
 

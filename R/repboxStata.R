@@ -232,7 +232,7 @@ repbox_stata_extract = function(project_dir, dotab = readRDS.or.null(file.path(p
 }
 
 
-parse.sup.do = function(file, reg.cmds = get.regcmds(), project_dir="", catch.err=TRUE, code=NULL) {
+parse.sup.do = function(file, reg.cmds = get.regcmds(), project_dir="", catch.err=TRUE, code=NULL, stop.on.error=FALSE) {
   restore.point("parse.sup.do")
   #if (endsWith(file,"Table6.do")) {
   #  restore.point("jskfjlsfjlsflkjlf")
@@ -248,12 +248,20 @@ parse.sup.do = function(file, reg.cmds = get.regcmds(), project_dir="", catch.er
   }
   err = NULL
   next.cmd = "normalize.do"
-  #err = try({
+  if (stop.on.error) {
     s = repbox.normalize.do(txt,file)
     next.cmd = "make.tab"
     res = repbox.do.table(s)
     tab=res$tab; ph.df = res$ph.df
-  #})
+  } else {
+    err = try({
+      s = repbox.normalize.do(txt,file)
+      next.cmd = "make.tab"
+      res = repbox.do.table(s)
+      tab=res$tab; ph.df = res$ph.df
+    })
+
+  }
   if (is(err,"try-error")) {
     return(tibble(project=project, project_dir=project_dir, file = file,ok=FALSE, save.dta = list(NULL), use.dta = list(NULL), ph = list(NULL), tab=list(NULL),num.reg.lines = 0, reg.lines=list(NULL), parse.err = TRUE, parse.err.type=next.cmd))
   }
