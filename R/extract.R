@@ -530,7 +530,7 @@ extract.stata.do.output = function(project_dir, run.df) {
 # last command to "Timeout when running do file"
 adapt.run.df.for.timeout = function(run.df, dotab, project_dir, opts) {
   restore.point("adapt.run.df.for.timeout")
-  donums = dotab$donum[dotab$timeout]
+  donums = dotab$donum[is.true(dotab$timeout)]
   # No timeout
   if (length(donums)==0) return(run.df)
   rows = which(run.df$donum %in% donums & is.na(run.df$runerrcode))
