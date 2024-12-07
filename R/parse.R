@@ -36,6 +36,8 @@ repbox.normalize.do = function(txt=readLines(do.file), do.file=NULL) {
     #cat("\n  post: mode=", s$mode, " level=", s$level," type=",pos.df$type[r],"orgline=",s$orgline,"orgline: newtxt=\n",paste0(s$orglines[1:s$line],": ",s$newtxt[1:s$line],collapse="\n\t"))
   }
   s = repa.finish.s(s)
+  rbind(s$orglines, s$end.orglines)
+
   #writeLines(s$newtxt,"~/repbox/temp2.do")
   return(s)
 }
@@ -90,6 +92,8 @@ repa.new.state = function(txt, pos.df, init.ph = 1000, init.newtxt = NROW(pos.df
     ph.df = tibble(ph=rep("", init.ph), content = ""),
     newtxt = rep("", init.newtxt),
     orglines = rep(NA_integer_, init.newtxt),
+    # Update 2024-12-07: Try to store end of orglines
+    end.orglines = rep(NA_integer_, init.newtxt),
     pos.df = pos.df,
     txt = txt,
     start = 1,
@@ -111,6 +115,7 @@ repa.finish.s = function(s) {
   }
   s$newtxt = trimws(s$newtxt[seq_len(s$line)])
   s$orglines = s$orglines[seq_len(s$line)]
+  s$end.orglines = s$end.orglines[seq_len(s$line)]
 
   s$ph.df = s$ph.df[seq_len(s$ph.count),,drop=FALSE]
   s$mode = "finished"
@@ -127,6 +132,7 @@ repa.next.token = function(s) {
   if (length(s$newtxt)< s$line-5) {
     s$newtxt = c(s$newtxt, rep("", length(s$newtxt)))
     s$orglines = c(s$orglines, rep(NA_integer_,length(s$newtxt)))
+    s$end.orglines = c(s$end.orglines, rep(NA_integer_,length(s$newtxt)))
   }
 
   type = s$pos.df$type[s$row]
@@ -210,6 +216,9 @@ repa.write.prev = function(s,mode=s$pos.df$type[s$row], start = s$start, end =  
   if (is.na(s$orglines[s$line]))
     s$orglines[s$line] = min(s$start.orgline + (s$delimit=="semi"),s$pos.df$oline[s$row])
 
+  s$end.orglines[s$line] = s$pos.df$oline[s$row]
+
+
   s$start = end+1
   s$mode = mode
   s
@@ -233,6 +242,9 @@ repa.write.ph = function(s, type=s$pos.df$type[s$row], start = s$start, end =  s
 
   if (is.na(s$orglines[s$line]))
     s$orglines[s$line] = min(s$start.orgline + (s$delimit=="semi"),s$pos.df$oline[s$row])
+
+  s$end.orglines[s$line] = s$pos.df$oline[s$row]
+
 
   s$start = end+1
   s$mode = "cmd"
@@ -404,7 +416,8 @@ repa.set.delimit = function(s) {
 repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   restore.point("repa.do.table")
 
-  orgline.marker = ifelse(is.na(s$orglines),"",paste0("#~oline",s$orglines,"~#"))
+  #orgline.marker = ifelse(is.na(s$orglines),"",paste0("#~oline",s$orglines,"~#"))
+  orgline.marker = ifelse(is.na(s$orglines),"",paste0("#~oline",s$orglines,"-", s$end.orglines, "~#"))
   newtxt = paste0(orgline.marker,s$newtxt)
   txt = merge.lines(newtxt)
 
@@ -444,7 +457,11 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   #cat(txt)
   txt = sep.lines(txt)
   has.orgline = startsWith(txt,"#~oline")
-  orgline = ifelse(has.orgline, str.between(txt,"#~oline","~#") %>% as.integer(),NA_integer_)
+  orgline_txt = ifelse(has.orgline, str.between(txt,"#~oline","~#"),"")
+  orgline_start = ifelse(has.orgline,as.integer(str.left.of(orgline_txt,"-")),NA_integer_)
+  orgline_end = ifelse(has.orgline,as.integer(str.right.of(orgline_txt,"-")),NA_integer_)
+
+  #orgline = ifelse(has.orgline, str.between(txt,"#~oline","~#") %>% as.integer(),NA_integer_)
   txt[has.orgline] = str.right.of(txt[has.orgline],"~#")
 
   str = txt
@@ -580,8 +597,29 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   saving[na.rows] = NA_character_
 
 
-  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, opens_block, closes_block, quietly, capture, orgline=orgline)
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, opens_block, closes_block, quietly, capture,orgline=orgline_start, orgline_start=orgline_start, orgline_end=orgline_end)
   tab = filter(tab, nchar(trimws(tab$txt))>0)
+
+  # In do files with #delimit ; commands not always a unique
+  # orgline is determined. We want to set that line to orgline
+  # in which the cmd starts
+  rows = which(tab$orgline_start != tab$orgline_end)
+  if (length(rows)>0) {
+    # remove first line which is empty and not accounted
+    # for in orgline
+    org_txt = sep.lines(s$txt)[-1]
+    for (r in rows) {
+      cmd = tab$cmd[r]
+      olines = tab$orgline_start[r]:tab$orgline_end[r]
+      # prefer later lines: idea is that more likely
+      # a comment before the line contains the command
+      # than a comment below the line
+      points = startsWith(org_txt[olines],cmd) + has.substr(org_txt[olines],cmd) + olines*1e-6
+      tab$orgline[r] = olines[which.max(points)]
+    }
+  }
+
+
 
 
   # Special treatment for outdated 'for any' command. Like
