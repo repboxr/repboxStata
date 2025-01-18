@@ -8,6 +8,6 @@ Description: Repbox analysis of stata scripts in reproduction packages
 License: GPL >= 3.0
 Remotes: skranz/stringtools
 Depends: dplyr, data.table, restorepoint, stringtools,
-         tidyr, magick, R.utils, lubridate, repboxDB, repboxUtils
+         tidyr, R.utils, lubridate, repboxDB, repboxUtils
 Encoding: UTF-8
 LazyData: true
