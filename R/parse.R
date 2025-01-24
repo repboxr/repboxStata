@@ -216,7 +216,8 @@ repa.write.prev = function(s,mode=s$pos.df$type[s$row], start = s$start, end =  
   if (is.na(s$orglines[s$line]))
     s$orglines[s$line] = min(s$start.orgline + (s$delimit=="semi"),s$pos.df$oline[s$row])
 
-  s$end.orglines[s$line] = s$pos.df$oline[s$row]
+  s$end.orglines[s$line] = if (s$delimit=="semi") s$pos.df$oline[s$row] else s$start.orgline
+  #stop("jjshdshd")
 
 
   s$start = end+1
