@@ -46,6 +46,16 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list()) {
   script_df = parcels$stata_file$script_file
   run_df = left_join(run_df, select(script_df, file_path, script_num), by="file_path")
 
+  # The indexing of run_df is different from run.df in repbox_results
+  # Also donum is not always equal to script_num
+  # This mapping is relevant e.g. to map files in repbox/stata/output
+  # to runid which have format donum_line_counter
+  # This allows e.g. to compile latex ex-post
+  runid_repbox_map = run_df %>%
+    select(runid, donum, line, counter)
+  saveRDS(runid_repbox_map, file.path(project_dir, "repbox/stata/runid_repbox_map.Rds"))
+
+
   repdb_check_data(run_df,"stata_run_cmd")
   repdb_check_data(run_df,"stata_run_log")
 

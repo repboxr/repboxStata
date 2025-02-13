@@ -145,6 +145,7 @@ repbox_project_run_stata = function(project_dir, opts=repbox_stata_opts(), parce
   run.start.time = Sys.time()
   # Run do files that are not included in other do files
   which.do = setdiff(which.do, incl.which.do)
+
   do.li = lapply(seq_along(which.do), function(i) {
     do.i = which.do[i]
     do = do.df[do.i,]
@@ -317,7 +318,7 @@ set.do.df.run.prio = function(do.df) {
 
 stata.inject.and.run = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts(), start.time = NULL) {
   restore.point("stata.inject.and.run")
-
+  #stop()
   # Check if global project timeout is reached
   if (!is.null(start.time)) {
 
@@ -343,7 +344,7 @@ get.do.logfile = function(do) {
 
 run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
   restore.point("run.do")
-
+  #stop()
   project_dir = do$project_dir
   org.file = do$file
   do.dir = dirname(org.file)
@@ -360,9 +361,9 @@ run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
 
   cmd.dir = file.path(repbox.dir,"cmd")
   if (!dir.exists(cmd.dir)) dir.create(cmd.dir)
-  cmd.file = file.path(cmd.dir, paste0("precmd_",do$doid,".csv"))
+  cmd.file = file.path(cmd.dir, paste0("precmd_",do$donum,".csv"))
   if (file.exists(cmd.file)) file.remove(cmd.file)
-  cmd.file = file.path(cmd.dir, paste0("postcmd_",do$doid,".csv"))
+  cmd.file = file.path(cmd.dir, paste0("postcmd_",do$donum,".csv"))
   if (file.exists(cmd.file)) file.remove(cmd.file)
 
   res = run_stata_do(new.file,timeout=timeout, verbose=verbose)

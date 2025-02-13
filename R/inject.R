@@ -646,9 +646,9 @@ inject.path.correction.pre = function(txt, lines=seq_along(txt), do) {
 '
 local repbox_source_path = subinstr("',file_str,'","\\","/",.)
 
-repbox_correct_path "',type,'" "`repbox_source_path\'" "', default_ext,'" "',sup.dir,'" "', normalizePath(dirname(do$file),winslash="/") ,'"\n'
-#'local repbox_corrected_path = "`r(repbox_corrected_path)\'"
-#display "`r(repbox_corrected_path)\'" \n',
+repbox_correct_path "',type,'" "`repbox_source_path\'" "', default_ext,'" "',sup.dir,'" "', normalizePath(dirname(do$file),winslash="/") ,'"\n',
+'capture noisily local repbox_corrected_path = "`r(repbox_corrected_path)\'"'
+#,'#display "`r(repbox_corrected_path)\'" \n',
   )
   code
 }
@@ -692,16 +692,16 @@ injection.esttab.etc = function(txt, lines=seq_along(txt), do) {
   restore.point("injection.esttab.etc")
   tab = do$tab[[1]]
   output.dir = file.path(do$project_dir,"repbox/stata/output")
-  ext_code = 'local repbox_file_ext = substr("`repbox_corrected_path\'", strrpos("`repbox_corrected_path\'","."), strlen("`repbox_corrected_path\'"))'
+  ext_code = 'capture noisily local repbox_file_ext = substr("`repbox_corrected_path\'", strrpos("`repbox_corrected_path\'","."), strlen("`repbox_corrected_path\'"))'
 
 
-  output.file = paste0(output.dir,"/", do$donum, '_', lines,"_`repbox_local_cmd_count'","`repbox_file_ext'")
+  output.file = normalizePath(paste0(output.dir,"/", do$donum, '_', lines,"_`repbox_local_cmd_count'","`repbox_file_ext'"),winslash = "/", mustWork = FALSE)
 
   paste0('
 ', end.injection(do$donum, lines, "RUNCMD",do),'
 * ', toupper(tab$cmd[lines]),' INJECTION START
 ', ext_code,'
-copy "`repbox_corrected_path\'" "',output.file,'"
+capture noisily copy "`repbox_corrected_path\'" "',output.file,'"
 ',post.injection(txt,lines,do=do),'
 * INJECTION END
 ')

@@ -25,7 +25,7 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
   run.df = adapt.run.df.for.timeout(run.df, dotab, project_dir, opts=opts)
   run.df = add.has.data.to.run.df(run.df)
 
-  run.df = extract.stata.do.output(project_dir, run.df)
+  run.df = extract.stata.do.output(project_dir, run.df, opts=opts)
 
   # Extract written Latex code by commands like esttab
   # Need to extend to created images
@@ -470,7 +470,7 @@ add.tab.error.info = function(tab, run.df) {
 
 
 # code to extract special output
-extract.stata.do.output = function(project_dir, run.df) {
+extract.stata.do.output = function(project_dir, run.df, opts=rbs.opts()) {
   restore.point("extract.stata.do.output")
 
   run.df = add.col(run.df, "out.ext","")
@@ -490,31 +490,31 @@ extract.stata.do.output = function(project_dir, run.df) {
 
   img.dir = paste0(project_dir,"/repbox/www/images")
   if (!dir.exists(img.dir)) dir.create(img.dir,recursive = TRUE)
-
-
   run.df$out.ext[run.rows] = tools::file_ext(out.files)
 
   # Latex files
-  rows = endsWith(out.files, ".tex")
-  files = out.files[rows]
-  f = files[1]
-  txt = lapply(files, function(f) {
-    readLines(f, warn=FALSE) %>% merge.lines()
-  }) %>% unlist()
+  if (isTRUE(opts$compile_tex)) {
+    rows = endsWith(out.files, ".tex")
+    files = out.files[rows]
+    f = files[1]
+    txt = lapply(files, function(f) {
+      readLines(f, warn=FALSE) %>% merge.lines()
+    }) %>% unlist()
 
-  run.df$out.txt[run.rows[rows]] = txt
-  for (f in files) {
-    pdf.file = paste0(img.dir,"/", tools::file_path_sans_ext(basename(f)),".pdf")
-    try(compile.tex.fragment(f,pdf.file = pdf.file, make.png = TRUE,delete.pdf = TRUE))
+    run.df$out.txt[run.rows[rows]] = txt
+    for (f in files) {
+      pdf.file = paste0(img.dir,"/", tools::file_path_sans_ext(basename(f)),".pdf")
+      try(compile.tex.fragment(f,pdf.file = pdf.file, make.png = TRUE,delete.pdf = TRUE))
+    }
+    img.files = paste0(tools::file_path_sans_ext(basename(files)),".png")
+
+    # TO DO: set "" for non-existing image files
+    # This can happen if there is a latex compilation error
+    exists = file.exists(paste0(img.dir,"/",img.files))
+    img.files[!exists] = ""
+
+    run.df$out.img.file[run.rows[rows]] = img.files
   }
-  img.files = paste0(tools::file_path_sans_ext(basename(files)),".png")
-
-  # TO DO: set "" for non-existing image files
-  # This can happen if there is a latex compilation error
-  exists = file.exists(paste0(img.dir,"/",img.files))
-  img.files[!exists] = ""
-
-  run.df$out.img.file[run.rows[rows]] = img.files
 
 
   # svg graphs
@@ -543,4 +543,55 @@ adapt.run.df.for.timeout = function(run.df, dotab, project_dir, opts) {
   run.df
 }
 
+#' Allows ex-post compilation of latex outputs
+#' to images. Since image magick can be a source of
+#' fatal errors it is better to do this in separate jobs
+#' ex-post
+repbox_compile_latex_outputs = function(project_dir, overwrite=FALSE) {
+  restore.point("repbox_compile_latex_outputs")
+  output_dir = paste0(project_dir,"/repbox/stata/output")
+  out_files = list.files(output_dir, full.names=TRUE)
+  rows = endsWith(out_files, ".tex")
+  tex_files = out_files[rows]
+  if (length(tex_files)==0) return()
 
+  img_dir = paste0(project_dir,"/repbox/www/images")
+  pdf_files = paste0(img_dir,"/", tools::file_path_sans_ext(basename(tex_files)),".pdf")
+  png_files = paste0(img_dir,"/", tools::file_path_sans_ext(basename(tex_files)),".png")
+
+  for (i in seq_along(tex_files)) {
+    if (!overwrite) if (file.exists(png_files[i])) next
+    txt = readLines(tex_files[i]) %>% merge.lines()
+    try(compile.tex.fragment(tex_files[i],pdf.file = pdf_files[i], make.png = TRUE,delete.pdf = TRUE))
+  }
+
+
+
+}
+
+repbox_add_images_to_run_df = function(project_dir, parcels=list(), save_parcel=TRUE) {
+  restore.point("repbox_add_images_to_run_df")
+  img_dir = paste0(project_dir,"/repbox/www/images")
+  img_files = list.files(img_dir, glob2rx("*.png"))
+  if (length(img_files)==0) return(invisible(parcels))
+
+  map = readRDS.or.null(file.path(project_dir, "repbox/stata/runid_repbox_map.Rds"))
+  if (is.null(map)) return(invisible(parcels))
+
+  parcels = repdb_load_parcels(project_dir, "stata_run_cmd", parcels=parcels)
+
+  run_df = parcels$stata_run_cmd$stata_run_cmd
+  map$id = paste0(map$donum,"_", map$line, "_", map$counter)
+  img_id = tools::file_path_sans_ext(img_files)
+  runids = map$runid[match(img_id, map$id)]
+  inds = match(runids, run_df$runid)
+  if (all(is.true(run_df$out_img_file[inds]!="")))
+    return(invisible(parcels))
+
+  run_df$out_img_file[inds] = paste0(img_id,".png")
+  parcels$stata_run_cmd$stata_run_cmd = run_df
+  if (save_parcel) {
+    repdb_save_parcels(parcels["stata_run_cmd"], file.path(project_dir, "repdb"))
+  }
+  invisible(parcels)
+}
