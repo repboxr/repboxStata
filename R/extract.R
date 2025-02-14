@@ -487,6 +487,9 @@ extract.stata.do.output = function(project_dir, run.df, opts=rbs.opts()) {
   donum_line_counter = basename(out.files) %>% str.left.of(".")
 
   run.rows = match(donum_line_counter, paste0(run.df$donum,"_",run.df$line,"_", run.df$counter))
+  keep = !is.na(run.rows)
+  out.files = out.files[keep]; run.rows=run.rows[keep]
+  if (length(out.files)==0) return(run.df)
 
   img.dir = paste0(project_dir,"/repbox/www/images")
   if (!dir.exists(img.dir)) dir.create(img.dir,recursive = TRUE)
