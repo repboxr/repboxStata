@@ -399,13 +399,3 @@ get.nographcmds = function() {
 }
 
 
-get.regcmds = function() {
-  restore.point("get.regcmds")
-  reg.cmds = getOption("repbox.reg.cmds")
-  if (!is.null(reg.cmds)) return(reg.cmds)
-  file = system.file("misc/regression_cmds.txt", package="repboxStata")
-  reg.cmds = readLines(file,warn = FALSE) %>% trimws()
-  options(repbox.reg.cmds = reg.cmds)
-  return(reg.cmds)
-}
-
