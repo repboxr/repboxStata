@@ -43,7 +43,7 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list()) {
     left_join(select(dotab, rootdonum = donum, root_file_path = file_path), by="rootdonum")
 
   run_df$runid = seq_len(NROW(run_df))
-  script_df = parcels$stata_file$script_file
+  script_df = parcels[["stata_file"]]
   run_df = left_join(run_df, select(script_df, file_path, script_num), by="file_path")
 
   # The indexing of run_df is different from run.df in repbox_results
@@ -59,8 +59,8 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list()) {
   repdb_check_data(run_df,"stata_run_cmd")
   repdb_check_data(run_df,"stata_run_log")
 
-  parcels$stata_run_cmd = list(stata_run_cmd = run_df)
-  parcels$stata_run_log = list(stata_run_log = run_df)
+  parcels$stata_run_cmd = run_df
+  parcels$stata_run_log = run_df
 
 
   # Store some aggregate information on the run
@@ -90,7 +90,7 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list()) {
     repbox_problem(msg = paste0(run_info$err_runs, " of the ", run_info$runs, " run commands without missing data threw an error."), type = "stata_err",fail_action = "msg")
   }
 
-  parcels$stata_run_info = list(stata_run_info=run_info)
+  parcels$stata_run_info = run_info
 
   repdb_save_parcels(parcels[c("stata_run_cmd","stata_run_log","stata_run_info")], file.path(project_dir, "repdb") )
   invisible(parcels)
@@ -137,7 +137,7 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
     left_join(select(dotab, rootdonum = donum, root_file_path = file_path), by="rootdonum")
 
   run_df$runid = seq_len(NROW(run_df))
-  script_df = parcels$stata_file$script_file
+  script_df = parcels$stata_file
   run_df = left_join(run_df, select(script_df, file_path, script_num), by="file_path")
 
   # Don't save detailed run results after reg run
@@ -145,8 +145,8 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
   #repdb_check_data(run_df,"stata_run_cmd")
   #repdb_check_data(run_df,"stata_run_log")
 
-  #parcels$stata_run_cmd = list(stata_run_cmd = run_df)
-  #parcels$stata_run_log = list(stata_run_log = run_df)
+  #parcels$stata_run_cmd = run_df
+  #parcels$stata_run_log = run_df
 
   run_info = run_df %>%
     summarize(
@@ -170,7 +170,7 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
 
 
 
-  org_run_info = parcels$stata_run_info$stata_run_info
+  org_run_info = parcels$stata_run_info
 
   if (NROW(org_run_info)==0) {
     if (run_info$err_runs >0) {
@@ -189,7 +189,7 @@ repbox_save_stata_reg_run_parcels = function(project_dir, parcels=list()) {
       repbox_problem(msg = paste0("The Stata run  which stored regression information had fewer errors than the original run."), type = "stata_reg_err",fail_action = "msg")
     }
   }
-  parcels$stata_reg_run_info = list(stata_run_info=run_info)
+  parcels$stata_reg_run_info = run_info
 
   repdb_save_parcels(parcels[c("stata_reg_run_info")], file.path(project_dir, "repdb") )
   invisible(parcels)
@@ -201,10 +201,10 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
   library(repboxDB)
   parcels = repdb_load_parcels(project_dir, c("stata_file","stata_run_cmd"), parcels=parcels)
 
-  do_df = parcels$stata_file$script_file
+  do_df = parcels$stata_file
 
   if (NROW(do_df)==0) {
-    parcels$stata_do_run_info = list(stata_do_run_info = repdb_null_to_empty(NULL, "stata_do_run_info"))
+    parcels$stata_do_run_info = repdb_null_to_empty(NULL, "stata_do_run_info")
     repboxDB::repdb_save_parcels(parcels["stata_do_run_info"],file.path(project_dir, "repdb"))
     return(parcels)
   }
@@ -228,8 +228,8 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
   do_df = left_join(do_df, dotab, by="file_path") %>%
     mutate(analyzed = na.val(analyzed, FALSE))
 
-  #cmd_df = parcels$stata_cmd$stata_cmd
-  run_df = parcels$stata_run_cmd$stata_run_cmd
+  #cmd_df = parcels$stata_cmd
+  run_df = parcels$stata_run_cmd
 
   run_info_df = run_df %>%
     mutate(
@@ -255,7 +255,7 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
     )
 
   do_df = repdb_select_fields(do_df, "stata_do_run_info")
-  parcels$stata_do_run_info = list(stata_do_run_info = do_df)
+  parcels$stata_do_run_info = do_df
   repboxDB::repdb_save_parcels(parcels["stata_do_run_info"],file.path(project_dir, "repdb"))
 
   parcels

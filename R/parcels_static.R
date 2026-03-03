@@ -5,7 +5,7 @@ repbox_stata_static_parcel = function(project_dir, parcels=list(), opts=NULL) {
   restore.point("repbox_stata_static_parcel")
 
   parcels = repdb_load_parcels(project_dir, "stata_source", parcels)
-  source_df = parcels$stata_source$script_source
+  source_df = parcels[["stata_source"]]
 
   # No Stata do file exists
   if (NROW(source_df)==0) return(parcels)
@@ -36,7 +36,7 @@ repbox_stata_static_parcel = function(project_dir, parcels=list(), opts=NULL) {
     )
 
   repdb_check_data(cmd_df,"stata_cmd")
-  parcels$stata_cmd = list(stata_cmd = cmd_df)
+  parcels$stata_cmd = cmd_df
   repdb_save_parcels(parcels["stata_cmd"], file.path(project_dir,"repdb"))
   parcels
 }
@@ -46,7 +46,7 @@ repbox_stata_static_parcel = function(project_dir, parcels=list(), opts=NULL) {
 # repdb_make_stata_script_parcels = function(project_dir, parcels=list()) {
 #   restore.point("repdb_make_script_parcels")
 #   parcels = repdb_load_parcels(project_dir, "file_info",parcels)
-#   file_df = parcels$file_info$file_info
+#   file_df = parcels$file_info
 #
 #   script_df = file_df %>%
 #     ungroup() %>%

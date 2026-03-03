@@ -567,9 +567,6 @@ repbox_compile_latex_outputs = function(project_dir, overwrite=FALSE) {
     txt = readLines(tex_files[i]) %>% merge.lines()
     try(compile.tex.fragment(tex_files[i],pdf.file = pdf_files[i], make.png = TRUE,delete.pdf = TRUE))
   }
-
-
-
 }
 
 repbox_add_images_to_run_df = function(project_dir, parcels=list(), save_parcel=TRUE) {
@@ -583,7 +580,7 @@ repbox_add_images_to_run_df = function(project_dir, parcels=list(), save_parcel=
 
   parcels = repdb_load_parcels(project_dir, "stata_run_cmd", parcels=parcels)
 
-  run_df = parcels$stata_run_cmd$stata_run_cmd
+  run_df = parcels$stata_run_cmd
   map$id = paste0(map$donum,"_", map$line, "_", map$counter)
   img_id = tools::file_path_sans_ext(img_files)
   runids = map$runid[match(img_id, map$id)]
@@ -592,7 +589,7 @@ repbox_add_images_to_run_df = function(project_dir, parcels=list(), save_parcel=
     return(invisible(parcels))
 
   run_df$out_img_file[inds] = paste0(img_id,".png")
-  parcels$stata_run_cmd$stata_run_cmd = run_df
+  parcels$stata_run_cmd = run_df
   if (save_parcel) {
     repdb_save_parcels(parcels["stata_run_cmd"], file.path(project_dir, "repdb"))
   }
