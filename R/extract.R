@@ -27,6 +27,8 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
 
   run.df = extract.stata.do.output(project_dir, run.df, opts=opts)
 
+
+  run.df$runid = seq_len(NROW(run.df))
   # Extract written Latex code by commands like esttab
   # Need to extend to created images
   #run.err.df = extract.do.output(do, run.err.df)
@@ -51,6 +53,14 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
 
   data.use = stata.repbox.data.use.info(run.df=run.df, dotab=dotab)
   saveRDS(data.use, file.path(project_dir,"repbox/stata/do_data_use.Rds"))
+
+  # If we need to map other extracted output in repbox/stata/...
+  # to runid but don't want to load the complete repbox_results.Rds
+  # that contains run.df
+  runid_repbox_map = run.df %>%
+    select(runid, donum, line, counter)
+  saveRDS(runid_repbox_map, file.path(project_dir, "repbox/stata/runid_repbox_map.Rds"))
+
 
   list(run.df=run.df,tab=tab, dotab=dotab)
 }

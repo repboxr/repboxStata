@@ -217,9 +217,9 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   }
 
   # Add injection after regression commands
-  # injection code is in repboxReg
+  # injection code is in repboxStataReg
   if (opts$extract.reg.info) {
-    if (!require(repboxReg)) {
+    if (!require(repboxStataReg)) {
       cat("\nInjection of specific regression information is planned for a new package repboxReg. That package does not yet exist.\n")
       opts$extract.reg.info = FALSE
     }

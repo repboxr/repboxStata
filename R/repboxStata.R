@@ -209,14 +209,14 @@ repbox_stata_extract = function(project_dir, dotab = readRDS.or.null(file.path(p
   saveRDS(res$tab, file.path(project_dir,"repbox/stata/tab.Rds"))
 
   if (opts$extract.reg.info) {
-    if (!require(repboxReg)) {
+    if (!require(repboxStataReg)) {
       cat("\nExtraction of specific regression information is planned for a new package repboxReg. That package does not yet exist.\n")
       opts$extract.reg.info = FALSE
     }
   }
 
   if (opts$extract.reg.info) {
-    regtab = extract.stata.regs(project_dir = project_dir, run.df = res$run.df, dotab=dotab)
+    regtab = repboxStataReg::rsr_extract_stata_reg_output(project_dir = project_dir, run.df = res$run.df, dotab=dotab)
   }
 
   if (opts$extract.scalar.vals) {
