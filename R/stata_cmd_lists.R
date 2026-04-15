@@ -31,3 +31,6 @@ get.regcmds = function() {
   return(reg.cmds)
 }
 
+repbox_always_cache_cmd = function() {
+  c("merge")
+}

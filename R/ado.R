@@ -1,7 +1,7 @@
 example = function() {
-  ado_dir = "C:/libraries/repbox/ado/plus"
+  ado_dir = normalizePath("~/ado/plus")
   are_repbox_ado_files_installed(ado_dir)
-  copy_repbox_ado_files(ado_dir)
+  copy_repbox_ado_files(ado_dir, overwrite=TRUE)
 }
 
 copy_repbox_ado_files = function(ado_dir, overwrite=FALSE) {
@@ -29,6 +29,7 @@ list_repbox_ado_files = function(full.names=FALSE, only_required=FALSE) {
 }
 
 are_repbox_ado_files_installed = function(ado_dirs, not_found = c("error","msg","nothing")[1]) {
+  restore.point("are_repbox_ado_files_installed")
   ado_files = list_repbox_ado_files(full.names = FALSE)
   exists = rep(FALSE, length(ado_files))
   for (dir in ado_dirs) {

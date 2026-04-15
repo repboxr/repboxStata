@@ -15,7 +15,6 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
     select(tab, project, donum, line,orgline, cmd,  everything())
   }) %>% bind_rows()
 
-
   run.df = extract.stata.run.cmds(project_dir)
   log.df = extract.stata.logs(project_dir)
   run.df = left_join(run.df, log.df, by=c("donum","line","counter"))
@@ -27,21 +26,10 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
 
   run.df = extract.stata.do.output(project_dir, run.df, opts=opts)
 
-
   run.df$runid = seq_len(NROW(run.df))
-  # Extract written Latex code by commands like esttab
-  # Need to extend to created images
-  #run.err.df = extract.do.output(do, run.err.df)
-
-  # Add latex output to logtxt. This allows to match numbers
-  # run.err.df$logtxt = ifelse(run.err.df$out.txt=="", run.err.df$logtxt,
-  #                            paste0(run.err.df$logtxt,"\n\n---Content of created file---\n\n", run.err.df$out.txt)
-  # )
-
 
   tab = add.tab.error.info(tab, run.df)
 
-  # Add error info for dotab
   agg = run.df %>%
     group_by(donum) %>%
     summarize(
@@ -54,16 +42,15 @@ extract.stata.results = function(project_dir, dotab, opts = rbs.opts()) {
   data.use = stata.repbox.data.use.info(run.df=run.df, dotab=dotab)
   saveRDS(data.use, file.path(project_dir,"repbox/stata/do_data_use.Rds"))
 
-  # If we need to map other extracted output in repbox/stata/...
-  # to runid but don't want to load the complete repbox_results.Rds
-  # that contains run.df
+  extract.stata.caches(project_dir, run.df)
+
   runid_repbox_map = run.df %>%
     select(runid, donum, line, counter)
   saveRDS(runid_repbox_map, file.path(project_dir, "repbox/stata/runid_repbox_map.Rds"))
 
-
   list(run.df=run.df,tab=tab, dotab=dotab)
 }
+
 
 extract.stata.run.cmds = function(project_dir) {
   restore.point("extract.stata.run.cmds")
@@ -604,4 +591,26 @@ repbox_add_images_to_run_df = function(project_dir, parcels=list(), save_parcel=
     repdb_save_parcels(parcels["stata_run_cmd"], file.path(project_dir, "repdb"))
   }
   invisible(parcels)
+}
+
+extract.stata.caches = function(project_dir, run.df) {
+  restore.point("extract.stata.caches")
+  cache.dir = file.path(project_dir, "repbox", "stata", "cached_dta")
+  if (!dir.exists(cache.dir)) return(NULL)
+
+  files = list.files(cache.dir, pattern = "\\.dta$", full.names = FALSE)
+  if (length(files) == 0) return(NULL)
+
+  parts = strsplit(gsub("\\.dta$", "", files), "_")
+  donum = as.integer(sapply(parts, `[`, 2))
+  line = as.integer(sapply(parts, `[`, 3))
+  counter = as.integer(sapply(parts, `[`, 4))
+
+  cache_df = tibble(donum = donum, line = line, counter = counter, cache_file = files)
+  cache_df = cache_df %>%
+    left_join(run.df %>% select(runid, donum, line, counter), by = c("donum", "line", "counter")) %>%
+    filter(!is.na(runid))
+
+  saveRDS(cache_df, file.path(project_dir, "repbox", "stata", "cache_files.Rds"))
+  return(cache_df)
 }

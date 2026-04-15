@@ -4,6 +4,7 @@ R/data_use.R
 R/do_includes.R
 R/extract.R
 R/inject.R
+R/intermediate_data.R
 R/latex.R
 R/mata_locate.R
 R/options.R
@@ -17,3 +18,5 @@ R/stata_fun.R
 R/stata_modules.R
 R/stata_util.R
 R/util.R
+inst/ado/r/repbox_intermediate_data.ado
+inst/ado/r/repbox_correct_path.ado

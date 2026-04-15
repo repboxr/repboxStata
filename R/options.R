@@ -22,33 +22,36 @@
 #' @param run.first a character string of dofiles that should be run first. Can be used to run install code first
 #' @param rerun.failed.included.do Shall do files that are included in other do files (or called via do) run again separately if no log file exists. Default is TRUE, but if initial run failed the 2nd separate run may not work correctly since data sets or variable might be missing.
 repbox_stata_opts = function(
-  use.includes=TRUE,just.files=NULL,verbose=TRUE, extract.reg.info=FALSE, keep.old.reg.info = !extract.reg.info, extract.scalar.vals = extract.reg.info, just.extract=FALSE, timeout=20,all.do.timeout = 60*60*5, glob.dir=NULL, force=TRUE, install.missing.modules = FALSE, report.inside.program = TRUE, set.stata.defaults.perma = FALSE, store.data = NULL, store.use.data.sig = !is.null(store.data), loop.log.cmd.max=10000, comment.out.install=TRUE, check.stata.paths.and.ado=TRUE,rerun.failed.included.do=TRUE, compile_tex_output = FALSE, ...) {
-  opts = list(
-    use.includes=use.includes,
-    just.files = just.files,
-    verbose=verbose,
-    extract.reg.info = extract.reg.info,
-    keep.old.reg.info = keep.old.reg.info,
-    extract.scalar.vals = extract.scalar.vals,
-    just.extract = just.extract,
-    timeout=timeout,
-    all.do.timeout = all.do.timeout,
-    glob.dir=glob.dir,
-    force=force,
-    install.missing.modules = install.missing.modules,
-    report.inside.program = report.inside.program,
-    set.stata.defaults.perma = set.stata.defaults.perma,
-    store.data = store.data,
-    store.use.data.sig = store.use.data.sig,
-    loop.log.cmd.max = loop.log.cmd.max,
-    comment.out.install = comment.out.install,
-    check.stata.paths.and.ado=check.stata.paths.and.ado,
-    rerun.failed.included.do = rerun.failed.included.do,
-    compile_tex_output = compile_tex_output,
-    ...
-  )
+  use.includes = TRUE,
+  just.files = NULL,
+  verbose = TRUE,
+  extract.reg.info = FALSE,
+  keep.old.reg.info = !extract.reg.info,
+  extract.scalar.vals = extract.reg.info,
+  just.extract = FALSE,
+  timeout = 20,
+  all.do.timeout = 60*60*5,
+  glob.dir = NULL,
+  force = TRUE,
+  install.missing.modules = FALSE,
+  report.inside.program = TRUE,
+  set.stata.defaults.perma = FALSE,
+  store.data = NULL,
+  store.use.data.sig = !is.null(store.data),
+  loop.log.cmd.max = 10000,
+  comment.out.install = TRUE,
+  check.stata.paths.and.ado = TRUE,
+  rerun.failed.included.do = TRUE,
+  compile_tex_output = FALSE,
+  capture_intermediate_data = TRUE,
+  intermediate_data_rel_dir = "../intermediate_data",
+  intermediate_data_move_final = TRUE,
+  ...
+) {
+  opts = c(as.list(environment()))
   opts
 }
+
 
 
 rbs.opts = function(name=NULL) {

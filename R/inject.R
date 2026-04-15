@@ -11,7 +11,6 @@ example = function() {
 
 inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts()) {
   restore.point("inject.do")
-  #if (do$doid=="config") stop()
 
   project_dir=do$project_dir
   id = tools::file_path_sans_ext(basename(do$file))
@@ -33,8 +32,6 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   ph = do$ph[[1]]
   tab = do$tab[[1]]
 
-  # Specify lines where we check that log output is written
-  # a limited number of times
   tab$run.max = NA_integer_
   if (!is.null(opts$loop.log.cmd.max)) {
     rows = tab$in.program == 1 | tab$in_loop == 1
@@ -48,13 +45,8 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
 
-  # Old: static path correction
-  #res = correct.do.paths(do = do,txt=txt,dir=project_dir)
-  #new.txt = txt = res$txt; fph=res$ph
-
   new.txt = txt
 
-  # Add noisily to quietly { or capture { blocks
   block.rows = tab$opens_block & (!(is.na(tab$quietly)) | !is.na(tab$capture))
   if (sum(block.rows) >0) {
     cmds = tab$cmd[block.rows]
@@ -75,8 +67,6 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   rows = startsWith(trimws(new.txt),"qui ") & !block.rows
   new.txt[rows] = str.right.of(new.txt[rows], "qui ") %>% trimws()
 
-
-  # Write version 16: before old table commands
   rows = which(tab$cmd == "table")
   if (length(rows)>0) {
     is.pre.table = is.pre.Stata17.table.command(tab$txt[rows])
@@ -85,17 +75,9 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     }
   }
 
-
-  # New: dynamic path correction
-  # This replaces a file reference to a placeholder, e.g.
-  # use mydata, clear -> use "`r(repbox_corrected_path)'", clear
-  # Later we also add PRECMD code that computes r(repbox_corrected_path)
   lines = which(tab$add.path.correction)
   new.txt[lines] = inject.path.correction.change.cmd(new.txt[lines], lines, do=do)
 
-  # Add capture noisily before all commands
-  # otherwise one error inside a loop will end the complete loop
-  # even if we run the script with nostop
   lines = which(!(
     is.true(tab$opens_block) | tab$in.program >= 2 |
       tab$cmd %in% c("}","foreach","forvalues","forval", "if","else","end", "while")
@@ -108,9 +90,6 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | endsWith(trimws(tab$txt),"}"))
 
-  # Bugfix: We also don't want to study start of loops in loops or loops
-  # in programs because then for those lines our injected max_run code
-  # does not work
   no.study.lines = union(no.study.lines,
     which(
       (tab$opens_block & tab$in.program == 1) |
@@ -124,25 +103,14 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   special.lines = NULL
 
-  # Update includes
   if (do$does.include & do$use.includes) {
     incl.df = do$incl.df[[1]]
-
-    # Adapt incl.df such that we can also deal with
-    # do commands that use local or global Stata variables
     incl.df = adapt.incl.df.for.stata.vars(incl.df,do$project_dir)
 
-    # Update do commands
     incl.do.df = filter(incl.df, cmd=="do" | cmd == "run")
 
     lines = incl.do.df$line
 
-    # A do command outputs all results from the do file
-    # we want to ignore it to avoid double matches.
-
-    # Note that we replace run commands with do commands
-    # That is because inside a run command, our
-    # output in the log files will not have the desired format
     new.txt[lines] = paste0(
       '\ndisplay "#~# START INCLUDE INJECTION ',do$donum,"_", lines,
       incl.do.df$find.file.code,
@@ -150,7 +118,6 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
       '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
     )
 
-    # Update include commands
     incl.do.df = filter(incl.df, cmd=="include")
     lines = incl.do.df$line
     new.txt[lines] = paste0(
@@ -158,15 +125,10 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
       '\ninclude "',incl.do.df$repbox.file,'"',
       '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
     )
-
   }
 
   before.inject.txt = new.txt
 
-  # Change clear all commands to pure clear commands
-  # otherwise our counter variables will be cleared
-  # Normally clear all is just at the beginning of the main.do
-  # file and not needed anyway in our context
   lines = which(tab$cmd == "clear" & tab$arg_str=="all")
   if (length(lines)>0) {
     cat(paste0("\nReplace ", length(lines)," 'clear all' command in ", do$dofile," with 'clear' to prevent loss of repbox global variables.\n"))
@@ -174,34 +136,52 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   }
 
 
-  # Add injection after use, save, clear commands
-  lines = setdiff(which(tab$cmd %in% c("use","u","us", "save","sa", "sav", "saveold", "clear","import","guse","gsave","gzuse","gzsave")), no.study.lines)
+  lines = setdiff(
+    which(tab$cmd %in% c("save", "sa", "sav", "saveold", "gsave", "gzsave","erase","rm")),
+    no.study.lines
+  )
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
+
+  lines = setdiff(
+    which(tab$cmd %in% c("erase","rm")),
+    no.study.lines
+  )
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
+
+  lines = setdiff(which(tab$cmd %in% c("use","u","us", "save","sa", "sav", "saveold", "clear","import","guse","gsave","gzuse","gzsave","rm","erase")), no.study.lines)
   special.lines = c(special.lines, lines)
   inj.txt = injection.use.etc(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt )
 
-  # Add injection after preserve, restore
+  # CACHE INJECTIONS
+  cache_cmds = repbox_always_cache_cmd()
+  lines = setdiff(which(tab$cmd %in% cache_cmds), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.cache_always(txt[lines], lines, do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+
   lines = setdiff(which(tab$cmd %in% c("preserve","restore")), no.study.lines)
   special.lines = c(special.lines, lines)
   inj.txt = injection.preserve.restore(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt)
 
-  # Add injection after esttab commands and other commands
-  # that create tex tables
   lines = setdiff(which(tab$cmd %in% c("esttab") & !is.na(tab$using)), no.study.lines)
   special.lines = c(special.lines, lines)
   inj.txt = injection.esttab.etc(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt )
 
-  # For loops we will add no end.injection
   lines = setdiff(which(tab$in_loop ==2), no.study.lines)
   special.lines = c(special.lines, lines)
   inj.txt = injection.loop(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt )
 
-
-  # Add injection after known graphic commands
-  # Save graphic as svg in the output folder
   gcmds = get.graphcmds()
   ngcmds = get.nographcmds()
   lines = setdiff(which(tab$cmd %in% gcmds & !(tab$cmd %in% ngcmds$cmd & tab$cmd2 %in% ngcmds)), no.study.lines)
@@ -209,15 +189,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   inj.txt = injection.graph.save(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt )
 
-  # Add injection after program just to mark that log output should be discarded
-  # We will look at the single commands from the program instead
   if (opts$report.inside.program) {
     lines = which(tab$cmd == "program")
     new.txt[lines] = paste0(new.txt[lines],'\ndisplay "!.REPBOX.CUSTOM.PROGRAM>*"')
   }
 
-  # Add injection after regression commands
-  # injection code is in repboxStataReg
   if (opts$extract.reg.info) {
     if (!require(repboxStataReg)) {
       cat("\nInjection of specific regression information is planned for a new package repboxReg. That package does not yet exist.\n")
@@ -225,23 +201,18 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     }
   }
 
-
   if (opts$extract.reg.info) {
     lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
     special.lines = c(special.lines, lines)
     inj.txt = injection.reg(txt[lines],lines,do)
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   } else {
-    # By default the only special treatment of
-    # regression code is that we store timevar, panelvar and xtset
     lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
     special.lines = c(special.lines, lines)
     inj.txt = injection.reg.simple(txt[lines],lines,do)
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   }
 
-  # Typically we want to store values of defined scalar values
-  # in the run that also stores regression information
   if (isTRUE(opts$extract.scalar.vals)) {
     lines = reg.rows = setdiff(which(tab$cmd %in% "scalar"), no.study.lines)
     special.lines = c(special.lines, lines)
@@ -249,44 +220,33 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   }
 
-
-  # Comment out certain commands
-
-  # Cannot set maxvar in all Stata versions
   lines = which(startsWith(new.txt, "set maxvar"))
   no.study.lines = c(no.study.lines, lines)
   new.txt[lines] = paste0("*", new.txt[lines])
   tab$commented.out[lines] = TRUE
 
-  # Cannot use browse, pause, br, cls command from
-  # Stata command line
-  # Also do not set any tracing and ignore "stop" commands
   lines = which(tab$cmd %in% c("br","browse", "pause","cls","stop") | (tab$cmd == "set" & is.true(startsWith(tab$cmd2,"trace"))))
   no.study.lines = c(no.study.lines, lines)
   new.txt[lines] = paste0("*", new.txt[lines])
   tab$commented.out[lines] = TRUE
 
-  # Comment out log related commands. Paths are not adapted anyways
   lines = which(tab$cmd %in% c("log","translate") )
   no.study.lines = c(no.study.lines, lines)
   new.txt[lines] = paste0("*", new.txt[lines])
   tab$commented.out[lines] = TRUE
 
-  # Comment out ssc install commands. We will install the packages ourselves
   if (isTRUE(opts$comment.out.install)) {
     lines = which(has.substr(new.txt, "ssc ") & has.substr(new.txt, " install "))
     no.study.lines = c(no.study.lines, lines)
     new.txt[lines] = paste0("*", new.txt[lines])
     tab$commented.out[lines] = TRUE
 
-    # Comment out sysdir set commands. We will install the packages ourselves
     lines = which(has.substr(new.txt, "sysdir ") & has.substr(new.txt, " set "))
     no.study.lines = c(no.study.lines, lines)
     new.txt[lines] = paste0("*", new.txt[lines])
     tab$commented.out[lines] = TRUE
 
   }
-
 
   if (!do$use.includes) {
     lines = which(tab$cmd %in% c("do","include","run"))
@@ -295,45 +255,30 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     tab$commented.out[lines] = TRUE
   }
 
-  # Inject code for other lines
   lines = setdiff(seq_len(NROW(tab)), c(special.lines, no.study.lines))
   inj.txt = injection.other(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt)
 
-  # Inject pre command code
   lines = setdiff(which(!tab$commented.out), no.study.lines)
   inj.txt = pre.injection(txt[lines],lines,do)
   new.txt[lines] = paste0(inj.txt,new.txt[lines])
 
-
-  # Deal with maximum loop counter
   lines = setdiff(which(!is.na(tab$run.max)), no.study.lines)
   new.txt[lines] = inject.loop.max.run(new.txt[lines], before.inject.txt[lines], lines, do)
 
-
-  # Save lines with injection in tab
   tab$new.txt = new.txt
 
-  # Inject code at the beginning of do file e.g. to establish log files
   org.file = do$file
   do.dir = dirname(org.file)
   org.base = basename(org.file)
   new.base = paste0("repbox_", org.base)
   new.file = file.path(do.dir, new.base)
-  #log.base = paste0(tools::file_path_sans_ext(new.base),".log")
-  #log.file = file.path(do.dir, log.base)
 
   log.file = normalizePath(file.path(repbox.dir,"logs", paste0("log_", do$donum,".log")), mustWork=FALSE,winslash = "/")
 
   incl.log.file = normalizePath(file.path(repbox.dir,"logs", paste0("include_", do$donum,".log")), mustWork=FALSE, winslash = "/")
 
-  # to deal with includes, we need unique lognames
-  #log.name = gsub(".","_", log.base,fixed=TRUE)
   log.name = paste0("repbox_log_", do$donum)
-
-  # This will only define repbox_cmd_count
-  # and start a separate log if the do file
-  # is not included in another do file
 
   start.timer.file = paste0(project_dir,"/repbox/stata/timer/start.txt")
   end.timer.file = paste0(project_dir,"/repbox/stata/timer/end.txt")
@@ -368,10 +313,10 @@ file close repbox_timer_file
 '
           ))
 
-  # Write modified do file
   writeLines(txt, new.file)
   return(list(do=do,txt=invisible(txt)))
 }
+
 
 
 scalar.injection = function(lines, ...) {
@@ -388,18 +333,20 @@ end.injection = function(donum, lines, type,...) {
 }
 
 
-post.injection = function(txt, lines, do, report.xtset=FALSE) {
+post.injection = function(txt, lines, do, report.xtset=FALSE, opts = rbs.opts()) {
   restore.point("post.injection")
   rep.dir = file.path(do$project_dir,"repbox/stata")
   cmdfile = file.path(rep.dir,"cmd", paste0("postcmd_",do$donum,".csv"))
   tab = do$tab[[1]]
   errcode_str = ifelse(is.true(tab$add.capture[lines]),"`=_rc\'","")
+
+
   inj.txt = paste0(
     '
+
 qui {
 file open repbox_cmd_file using "', cmdfile,'", write append
 file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';;','"\'',
-# Add call xtset to set r(timevar) etc...
 if (report.xtset) '\ncapture xtset',
 '\nfile write repbox_cmd_file `"',
 if (report.xtset) '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'' else ';;',
@@ -407,9 +354,6 @@ if (report.xtset) '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'' else ';;',
 file write repbox_cmd_file _n
 file close repbox_cmd_file
 ',
-# We add the display command to reset _rc to 0 if there was an error in xtset
-# if (report.xtset) 'capture display 0\n',
-# Close qui
 '\n}'
   )
   # Don't inject code if a block is opened (if, foreach etc)
@@ -419,36 +363,6 @@ file close repbox_cmd_file
   inj.txt
 }
 
-
-post.injection.old = function(txt, lines, do, reset.datasig=FALSE, report.datasig=FALSE, report.xtset=FALSE) {
-  restore.point("post.injection")
-  rep.dir = file.path(do$project_dir,"repbox/stata")
-  cmdfile = file.path(rep.dir,"cmd", paste0("postcmd_",do$donum,".csv"))
-  tab = do$tab[[1]]
-  errcode_str = ifelse(is.true(tab$add.capture[lines]),"`=_rc\'","")
-  inj.txt = paste0(
-    '
-qui {
-file open repbox_cmd_file using "', cmdfile,'", write append
-file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';;',
-if (report.xtset) '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'' else ';;','"\'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-',
-# We add the display command to reset _rc to 0 if there is an error in xtset
-# Note that xtset must be add the end since other _rc will be overwritten
-if (report.xtset) 'capture xtset\ncapture display 0','
-',
-'
-}
-'
-  )
-  # Don't inject code if a block is opened (if, foreach etc)
-  inj.txt[tab$opens_block[lines]] = ""
-  save.dta.code = save.dta.injection(txt, lines, do)
-  inj.txt = paste0(inj.txt, save.dta.code)
-  inj.txt
-}
 
 save.dta.injection = function(txt, lines, do, opts=rbs.opts()) {
   restore.point("save.dta.injection")
@@ -527,7 +441,7 @@ save "',save.dta.files,'", replace
   all.code
 }
 
-pre.injection = function(txt, lines=seq_along(txt), do) {
+pre.injection = function(txt, lines=seq_along(txt), do, opts = rbs.opts()) {
   #restore.point("pre.injection")
   rep.dir = file.path(do$project_dir,"/repbox/stata")
   cmd.file = file.path(rep.dir,"cmd", paste0("precmd_",do$donum,".csv"))
@@ -547,7 +461,11 @@ local repbox_local_cmd_count = $repbox_cmd_count
 local repbox_cmdline = `"',cmdline_txt,'"\'
 ')
 
-  inj.txt[add.path.correction] = paste0(inj.txt[add.path.correction],"\n",inject.path.correction.pre(txt[add.path.correction],lines[add.path.correction],do))
+  inj.txt[add.path.correction] = paste0(
+    inj.txt[add.path.correction],
+    "\n",
+    inject.path.correction.pre(txt[add.path.correction],lines[add.path.correction],do)
+  )
 
   found.path = ifelse(add.path.correction,'`r(repbox_corrected_path)\'','')
   wdir = ifelse(add.path.correction,"`c(pwd)'","")
@@ -565,6 +483,7 @@ ifelse(tab$in_loop[lines]==2,"", start.injection(do$donum, lines, "RUNCMD", do))
   )
   inj.txt
 }
+
 
 inject.loop.max.run = function(txt, before.txt, lines, do) {
   restore.point("inject.loop.max.run")
@@ -672,17 +591,59 @@ inject.path.correction.change.cmd = function(txt, lines=seq_along(txt), do) {
 }
 
 
+inject.intermediate.data.pre = function(lines, do, opts = rbs.opts()) {
+  if (!isTRUE(opts$capture_intermediate_data) || length(lines) == 0) {
+    return(rep("", length(lines)))
+  }
+
+  paths = intermediate.data.paths(do)
+
+  paste0(
+    '\nrepbox_intermediate_data archive_previous "`repbox_corrected_path\'" "',
+    paths$mod_dir, '" "',
+    paths$intermediate_dir, '" "',
+    paths$state_dir, '"\n'
+  )
+}
+
+
+inject.intermediate.data.post = function(lines, do, opts = rbs.opts()) {
+  if (!isTRUE(opts$capture_intermediate_data) || length(lines) == 0) {
+    return(rep("", length(lines)))
+  }
+
+  paths = intermediate.data.paths(do)
+
+  paste0(
+    '\nrepbox_intermediate_data mark_saved "`repbox_corrected_path\'" "',
+    paths$mod_dir, '" "',
+    paths$intermediate_dir, '" "',
+    paths$state_dir, '" ',
+    do$donum, ' ', lines, ' `repbox_local_cmd_count\'\n'
+  )
+}
+
 injection.use.etc = function(txt, lines=seq_along(txt), do, opts=rbs.opts()) {
   restore.point("injection.use.etc")
   tab = do$tab[[1]]
+
+  post.txt = post.injection(txt, lines, do=do, report.xtset=TRUE)
+
+
+  im_post = rep("", length(lines))
+  save_rows = tab$cmd[lines] %in% c("save", "sa", "sav", "saveold", "gsave", "gzsave", "erase","rm")
+  if (isTRUE(opts$capture_intermediate_data) && any(save_rows)) {
+    im_post[save_rows] = inject.intermediate.data.post(lines[save_rows], do, opts)
+  }
+
   paste0('
 ', end.injection(do$donum,lines, "RUNCMD", do),'
 * ', toupper(tab$cmd[lines]),' INJECTION START
-',post.injection(txt,lines,do=do, report.xtset=TRUE),'
+', post.txt,
+im_post,'
 * INJECTION END
 ')
 }
-
 
 
 # esttab generates a latex output file
@@ -706,6 +667,10 @@ capture noisily copy "`repbox_corrected_path\'" "',output.file,'"
 * INJECTION END
 ')
 }
+
+
+
+
 
 injection.graph.save = function(txt, lines, do) {
   restore.point("injection.graph.save")
@@ -840,4 +805,18 @@ adopath.injection.code = function(project_dir, ado_dirs = get_ado_dirs()) {
     code = paste0(code, paste0('adopath + "',rev(ado_dirs),'"', collapse="\n\t"))
   }
   code
+}
+
+injection.cache_always = function(txt, lines, do) {
+  restore.point("injection.cache_always")
+  cache.dir = file.path(do$project_dir, "repbox", "stata", "cached_dta")
+
+  cache.file = paste0(cache.dir, "/cache_", do$donum, "_", lines, "_`repbox_local_cmd_count'.dta")
+  paste0('
+', end.injection(do$donum, lines, "RUNCMD", do),'
+* CACHE INJECTION START
+', post.injection(txt, lines, do=do),'
+capture noisily save "', cache.file, '", replace
+* CACHE INJECTION END
+')
 }

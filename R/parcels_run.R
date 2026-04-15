@@ -33,7 +33,8 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list(), repbox_res
   run_df = res$run.df %>%
     mutate(
       artid = artid,
-      found_path = file_path_relative_to_supp(foundfile, paste0("/", artid, "/mod/"),wdir = wdir, supp.dir = paste0(project_dir, "/", artid, "/mod/")),
+      #found_path = file_path_relative_to_supp(foundfile, paste0("/", artid, "/mod/"),wdir = wdir, supp.dir = paste0(project_dir, "/", artid, "/mod/")),
+      found_path = file_path_relative_to_supp(foundfile, paste0("/", artid, "/mod/"),wdir = wdir, supp.dir = paste0(project_dir, "/mod/")),
       missing_data = !has.data
     ) %>%
     rename(
@@ -95,6 +96,8 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list(), repbox_res
 
   parcels$stata_run_info = run_info
 
+
+
   repdb_save_parcels(parcels[c("stata_run_cmd","stata_run_log","stata_run_info", "xtvar")], file.path(project_dir, "repdb") )
   invisible(parcels)
 }
@@ -127,7 +130,7 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
   dotab = rename.cols(dotab, old_cols, new_cols)
 
   artid = basename(project_dir)
-  dotab$file_path = str.right.of(normalizePath(dotab$file, winslash = "/"),paste0("/",artid,"/mod/"))
+  dotab$file_path = str.right.of(normalizePath(dotab$file, winslash = "/",mustWork = FALSE),paste0("/",artid,"/mod/"))
   #dotab$file_path = str.right.of(normalizePath(dotab$file),paste0(normalizePath(dotab$project_dir),"/mod/"))
   dotab$analyzed = rep(TRUE, NROW(dotab))
   do_df = left_join(do_df, dotab, by="file_path") %>%
