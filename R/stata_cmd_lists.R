@@ -13,7 +13,7 @@ stata_cmds_postreg = function() {
 }
 
 stata_cmds_quasireg = function() {
-  c("rd", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hausman","stcox", "xtivreg","ivreghdfe","condivreg","oprobit","xtpoisson","newey2","hetprob","reg2hdfespatial")
+  c("rd", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hausman","stcox", "xtivreg","ivreghdfe","condivreg","xtpoisson","newey2","hetprob","reg2hdfespatial")
 }
 
 stata_cmds_reg = function() {
@@ -32,5 +32,5 @@ get.regcmds = function() {
 }
 
 repbox_always_cache_cmd = function() {
-  c("merge")
+  c("merge","joinby")
 }

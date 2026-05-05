@@ -44,7 +44,7 @@ biprobit
 tobit
 ivtobit
 clogit
-obprobit
+oprobit
 ologit
 heckoprobit
 rologit

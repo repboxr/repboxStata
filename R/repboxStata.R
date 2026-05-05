@@ -245,6 +245,10 @@ parse.sup.do = function(file, reg.cmds = get.regcmds(), project_dir="", catch.er
   } else {
     txt = sep.lines(code)
   }
+  # NEW: Try to always robustly encode
+  txt = iconv(txt, from = "", to = "UTF-8", sub = "")
+  txt = enc2utf8(txt)
+
   err = NULL
   next.cmd = "normalize.do"
   if (stop.on.error) {
@@ -396,4 +400,25 @@ get.nographcmds = function() {
   return(cmds)
 }
 
+robustly_read_stata_text = function(file) {
+  txt = readLines(file, warn = FALSE, encoding = "UTF-8")
+
+  txt_utf8 = iconv(txt, from = "UTF-8", to = "UTF-8", sub = NA)
+  bad = is.na(txt_utf8) & !is.na(txt)
+
+  if (any(bad)) {
+    txt_native = iconv(txt[bad], from = "", to = "UTF-8", sub = NA)
+    still_bad = is.na(txt_native) & !is.na(txt[bad])
+
+    if (any(still_bad)) {
+      txt_latin1 = iconv(txt[bad][still_bad], from = "latin1", to = "UTF-8", sub = "?")
+      txt_native[still_bad] = txt_latin1
+    }
+
+    txt_utf8[bad] = txt_native
+  }
+
+  txt_utf8[is.na(txt_utf8)] = ""
+  txt_utf8
+}
 

@@ -318,13 +318,15 @@ file close repbox_timer_file
 }
 
 
+#
+# scalar.injection = function(lines, ...) {
+#   args = list(...)
+#   restore.point("scalar.injection")
+#   str = do.call(paste0,args)
+#   paste0('display "#~=~# ',lines,' `repbox_local_cmd_count\' ', str,'"')
+# }
 
-scalar.injection = function(lines, ...) {
-  args = list(...)
-  restore.point("scalar.injection")
-  str = do.call(paste0,args)
-  paste0('display "#~=~# ',lines,' `repbox_local_cmd_count\' ', str,'"')
-}
+
 start.injection = function(donum, lines, type, ...) {
   paste0('display "#~# INJECT ',type,' ',donum,' ', lines,' `repbox_local_cmd_count\'\n')
 }

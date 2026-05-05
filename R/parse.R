@@ -44,6 +44,12 @@ repbox.normalize.do = function(txt=readLines(do.file), do.file=NULL) {
 
 repa.pos.df = function(txt, oline.offset=0) {
   restore.point("repa.pos.df")
+
+  txt = iconv(txt, from = "UTF-8", to = "UTF-8", sub = "?")
+  #txt[is.na(txt)] = ""
+
+  ltxt = stringi::stri_trans_tolower(txt)
+
   loc.all = function(pattern,type=pattern,fixed=TRUE, perl=!fixed) {
     restore.point("loc.all")
     #pos = gregexpr(pattern, txt, fixed=fixed)[[1]]
@@ -57,7 +63,7 @@ repa.pos.df = function(txt, oline.offset=0) {
     if (NROW(pos)==0) return(NULL)
     as_tibble(list(type=type, pattern=pattern, start=pos[,1], end=pos[,2]))
   }
-  ltxt = tolower(txt)
+  #ltxt = tolower(txt)
   pos.df = bind_rows(
     loc.all("\n[ \t]*","nl", fixed=FALSE),
     loc.all(";[ \t]*","semi",fixed=FALSE),
