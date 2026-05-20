@@ -437,7 +437,7 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   # Set brackets () into ph
   pho = try(blocks.to.placeholder(txt, start=c("("), end=c(")"), ph.prefix = "#~br"))
   if (is(pho,"try-error")) {
-    pho = stepwise.blocks.to.placeholder(txt, ph.df)
+    pho = stepwise.blocks.to.placeholder(txt, ph.df,ph.prefix = "#~br")
   }
   txt = pho$str; br.ph.df = pho$ph.df
   if (any(duplicated(br.ph.df$ph))) {
@@ -830,14 +830,14 @@ repbox.re.cmdlines.to.tab = function(txt) {
   # Set quotes "" into ph
   pho = try(blocks.to.placeholder(txt, start=c('"'), end=c('"'), ph.prefix = "#~qu"))
   if (is(pho,"try-error")) {
-    pho=stepwise.blocks.to.placeholder(txt, ph.df)
+    pho=stepwise.blocks.to.placeholder(txt, ph.df=NULL, ph.prefix = "#~qu", start='"', end='"')
   }
   txt = pho$str; ph.df = pho$ph.df
 
   # Set brackets () into ph
   pho = try(blocks.to.placeholder(txt, start=c("("), end=c(")"), ph.prefix = "#~br",ph.df = ph.df))
   if (is(pho,"try-error")) {
-    pho=stepwise.blocks.to.placeholder(txt, ph.df)
+    pho=stepwise.blocks.to.placeholder(txt, ph.df, ph.prefix = "#~br")
   }
   txt = pho$str; ph.df = pho$ph.df
 
