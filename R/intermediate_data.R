@@ -104,3 +104,37 @@ repbox_make_intermediate_data_df = function(project_dir, run_df, opts = rbs.opts
 }
 
 
+
+#' Rescue intermediate data sets that were never overwritten
+#'
+#' Because of lazy archiving, intermediate datasets that are saved only once
+#' are left in the mod/ directory. This function rescues them into
+#' repbox/stata/intermediate_data/ so they can be included in narrow bundles.
+repbox_rescue_unarchived_intermediate_data = function(project_dir) {
+  im_rds_file = file.path(project_dir, "repbox/stata/intermediate_data.Rds")
+  if (!file.exists(im_rds_file)) return(invisible(FALSE))
+
+  df = readRDS(im_rds_file)
+  if (NROW(df) == 0) return(invisible(TRUE))
+
+  missing_rows = which(!df$has_copy)
+  if (length(missing_rows) == 0) return(invisible(TRUE))
+
+  im_data_dir = file.path(project_dir, "repbox/stata/intermediate_data")
+  mod_dir = file.path(project_dir, "mod")
+
+  for (i in missing_rows) {
+    src = file.path(mod_dir, df$file_path[i])
+    dest = file.path(im_data_dir, df$copy_path[i])
+
+    if (file.exists(src)) {
+      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+      if (file.copy(src, dest, overwrite = TRUE)) {
+        df$has_copy[i] = TRUE
+      }
+    }
+  }
+
+  saveRDS(df, im_rds_file)
+  invisible(TRUE)
+}
