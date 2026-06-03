@@ -664,6 +664,10 @@ extract.if.in.using = function(str) {
   restore.point("extract.if.in.using")
   #str = c("dothings x using x if a>5","", "dothings x if a>5 using x")
 
+  # Normalize to ensure space before if/in/using when directly following a closing bracket, quote, or placeholder
+  str = stringi::stri_replace_all_regex(str, "(?<=[\\)\\]\"']|~#)if\\s", " if ")
+  str = stringi::stri_replace_all_regex(str, "(?<=[\\)\\]\"']|~#)in\\s", " in ")
+  str = stringi::stri_replace_all_regex(str, "(?<=[\\)\\]\"']|~#)using\\s", " using ")
 
   patterns = c(" if ", " in ", " using ")
   keys = c("if", "in", "using")
