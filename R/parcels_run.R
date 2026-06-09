@@ -64,6 +64,41 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list(), repbox_res
   xtvar = run_df %>%
     select(runid, timevar, panelvar, tdelta) %>%
     filter(!is_empty_str(timevar) | !is_empty_str(panelvar) | !is_empty_str(tdelta))
+
+  # Augment xtvar with parsed timevar and failvar (panelvar) from stset for stcox regressions
+  stcox_runs = run_df %>% filter(cmd == "stcox")
+  if (nrow(stcox_runs) > 0) {
+    stset_runs = run_df %>% filter(cmd == "stset")
+    if (nrow(stset_runs) > 0) {
+      stcox_xtvar_list = lapply(stcox_runs$runid, function(r_id) {
+        # Find the most recent stset before this regression
+        valid_stset = stset_runs %>% filter(runid < r_id) %>% arrange(runid)
+        if (nrow(valid_stset) == 0) return(NULL)
+
+        last_stset = tail(valid_stset$cmdline, 1)
+
+        # Extract timevar (first argument after stset)
+        timevar = stringi::stri_match_first_regex(last_stset, "^\\s*stset\\s+([A-Za-z0-9_\\.]+)")[,2]
+
+        # Extract failvar from failure() or fail() and map it to panelvar
+        panelvar = stringi::stri_match_first_regex(last_stset, "(?:failure|fail)\\(\\s*([A-Za-z0-9_\\.]+)")[,2]
+
+        if (is.na(timevar)) return(NULL)
+
+        tibble(
+          runid = as.integer(r_id),
+          timevar = as.character(timevar),
+          panelvar = as.character(ifelse(is.na(panelvar), NA_character_, panelvar)),
+          tdelta = NA_character_
+        )
+      })
+      stcox_xtvar = bind_rows(stcox_xtvar_list)
+      if (nrow(stcox_xtvar) > 0) {
+        xtvar = bind_rows(xtvar, stcox_xtvar) %>% distinct(runid, .keep_all = TRUE)
+      }
+    }
+  }
+
   parcels$xtvar = xtvar
 
 

@@ -8,6 +8,7 @@ reghdfe
 reg2hdfe
 xtreg
 xtivreg2
+xtivreg
 regress
 cgmreg
 intreg
@@ -73,3 +74,4 @@ etpoisson
 arima
 arfima
 ppml
+stcox
