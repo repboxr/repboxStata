@@ -34,5 +34,9 @@ get.regcmds = function() {
 repbox_always_cache_cmd = function() {
   # cem is a custom function that generates a column cem_weights
   # too hard to reimplment in R so we always cache after it
-  c("merge","joinby","cem")
+
+  # merge, joinby and append combine with other existing data
+  # but here we have not implemented our full data copy pipeline
+  # so it is better to cache afterwards
+  c("merge","joinby","cem", "append")
 }
