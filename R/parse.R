@@ -617,6 +617,7 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
     org_txt = sep.lines(s$txt)[-1]
     for (r in rows) {
       cmd = tab$cmd[r]
+      if (is.na(cmd) || isTRUE(cmd=="")) next
       olines = tab$orgline_start[r]:tab$orgline_end[r]
       # prefer later lines: idea is that more likely
       # a comment before the line contains the command
