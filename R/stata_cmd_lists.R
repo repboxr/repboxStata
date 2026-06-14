@@ -38,5 +38,5 @@ repbox_always_cache_cmd = function() {
   # merge, joinby and append combine with other existing data
   # but here we have not implemented our full data copy pipeline
   # so it is better to cache afterwards
-  c("merge","joinby","cem", "append")
+  c("merge","joinby","cem", "append", "cross", "fmerge")
 }
