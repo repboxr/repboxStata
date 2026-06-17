@@ -213,6 +213,15 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   }
 
+  quasi_cmds = stata_cmds_quasireg()
+  lines = quasi.rows = setdiff(which(tab$cmd %in% quasi_cmds), c(no.study.lines, special.lines))
+  if (length(lines) > 0) {
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg.simple(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
+
   if (isTRUE(opts$extract.scalar.vals)) {
     lines = reg.rows = setdiff(which(tab$cmd %in% "scalar"), no.study.lines)
     special.lines = c(special.lines, lines)
