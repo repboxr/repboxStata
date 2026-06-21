@@ -10732,7 +10732,43 @@ is_negative = function(n) {
 # Your Task
 ##################################
 
+Ok, here we have a run_project.do that calls other do files. Besides run_project.do, only Overview_Aufbereiter.do was available, the other do files were missing. For some reason all regressions in Overview_Aufbereiter.do are twice the stata_run_cmd parcel. Normally, a do file that is called be a scheduler like run_project.do should not be called again separately. But perhaps that happened here.
+
+Do you have any clue why we have all regressions from Overview_Aufbereiter.do twice with different runid. (Runids are far away from each other suggesting that the do file was run twice.)
+
+Any helpful additional output you might need?
  
+```Overview_Aufbereitet.do
+clear all
+set more off
+set memory 100m
+cap log close
+
+use "$mypath\raw_data\Overview.dta", clear
+log using "$mypath\Overview_Aufbereitet.log", replace
+
+
+*************************************************************************************************
+* LABEL
+
+label var date "Datum"
+label var id "Personen ID"
+label var no_problem "problematische Teilnehmernummer"
+label var session_problem "Problematische Sessionnummer"
+label var reason_problem "Grund für Problematik"
+label var treatment_id "eindeutige numerische Identifikation des Treatments"
+label var treatment_id2 "eindeutige Identifikation des Treatments als Character"
+label var slider "Slider Dummy"
+label var creative "Creative Dummy"
+label var eke "EKE Dummy"
+label var kek "KEK Dummy"
+label var slider_fair "Slider mit Fairwage Abfrage Dummy"
+label var creative_trans "Creative Task mit Transfer Dummy"
+label var subject "Teilnehmernummer innerhalb der Session"
+label var proposer "Arbeitgeber (0: Arbeitnehmer, 1: Arbeitgeber)"
+label var score1 "Score nachbewertet Runde 1"
+
+REMAINING ROWS OMITTED
 ```
  
 

@@ -41,29 +41,20 @@ add.includes.to.do.df = function(do.df) {
 
   if (any(incl.df$has.stata.var)) {
     # Deal with rows that have a stata variable in the file
-    # Example: The main.do has a command
-    # do "../Code/Stata Do Files/Data Analysis/Section`section'.do"
-    #
-    # We will suspect all files that match
-    # Section*.do
-    # to be included.
-    #
-    # Even if some of them are not included, they
-    # will be run later again because they have no log file
     rows = which(incl.df$has.stata.var)
 
     row = rows[1]
     mfiles = lapply(rows, function(row) {
       dofile = incl.df$dofile[row]
       file.pattern = glob2rx(replace.stata.var.in.string(dofile))
-      matches = grepl(file.pattern, do.df$dofile)
+      matches = grepl(file.pattern, do.df$dofile, ignore.case = TRUE)
       do.df$dofile[matches]
     })
 
     all.files = c(incl.df$dofile[!incl.df$has.stata.var], unlist(mfiles))
-    do.df$is.included = suppressWarnings(do.df$dofile %in% all.files)
+    do.df$is.included = suppressWarnings(tolower(do.df$dofile) %in% tolower(all.files))
   } else {
-    do.df$is.included = suppressWarnings(do.df$dofile %in% incl.df$dofile)
+    do.df$is.included = suppressWarnings(tolower(do.df$dofile) %in% tolower(incl.df$dofile))
   }
 
   do.df$does.include = !sapply(incl.li, is.null)

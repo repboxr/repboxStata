@@ -129,10 +129,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   before.inject.txt = new.txt
 
-  lines = which(tab$cmd == "clear" & tab$arg_str=="all")
+  lines = which(tab$cmd == "clear" & startsWith(trimws(tab$arg_str), "all"))
   if (length(lines)>0) {
     cat(paste0("\nReplace ", length(lines)," 'clear all' command in ", do$dofile," with 'clear' to prevent loss of repbox global variables.\n"))
-    new.txt[lines] = "clear"
+    new.txt[lines] = stringi::stri_replace_first_regex(new.txt[lines], "\\ball\\b", "")
+    #new.txt[lines] = "clear"
   }
 
 

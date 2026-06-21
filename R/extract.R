@@ -310,32 +310,7 @@ extract.do.runtimes = function(project_dir, dotab) {
 extract.stata.logs = function(project_dir) {
   restore.point("extract.stata.logs")
   dir = file.path(project_dir, "repbox/stata/logs")
-  files = list.files(dir,glob2rx("log_*.log"),full.names = TRUE)
-
-  #   # I hoped this code would be faster, but that seems not the case
-  #
-  #   txt = unlist(lapply(files, readLines, warn=FALSE)) %>% enc2utf8()
-  #   bdf = extract.inject.blocks(txt, type="RUNCMD")
-  #
-  #   log.df = lapply(seq_len(NROW(bdf)), function(i) {
-  #     str = bdf$str[[i]]
-  #     donum = bdf$donum[i]
-  #     line=bdf$line[i]
-  #     counter=bdf$counter[i]
-  #     ignore = has.substr(str,"#~# INJECT") | has.substr(str,"#~# END INJECT")
-  #     str = str[!ignore]
-  #     if (isTRUE(str[length(str)]==".")) str[-length(str)]
-  #     #str = str[nchar(str)>0]
-  #     logtxt = merge.lines(str)
-  #     # To avoid later invalid multibyte string errors
-  #     logtxt = iconv(logtxt, to="UTF-8", sub="?")
-  #     logtxt[is.na(logtxt)] = ""
-  #     logtxt = gsub("capture:  noisily: ","",logtxt,fixed = TRUE)
-  #     tibble(donum=donum, line=line, counter=counter,logtxt=logtxt)
-  #   }) %>% bind_rows()
-  #
-  #   return(log.df)
-
+  files = list.files(dir, pattern = "^(log|include)_.*\\.log$", full.names = TRUE)
 
   res.li = lapply(files, function(file) {
     txt = readLines(file,warn=FALSE) %>% enc2utf8()
