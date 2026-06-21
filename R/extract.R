@@ -317,6 +317,13 @@ extract.stata.logs = function(project_dir) {
     check.stata.log.for.critical.problems(txt)
     bdf = extract.inject.blocks(txt, type="RUNCMD")
 
+    file_donum = as.integer(str.between(basename(file), "_", ".log"))
+    if (!is.na(file_donum) && NROW(bdf) > 0) {
+      bdf = bdf[bdf$donum == file_donum, , drop = FALSE]
+    }
+
+    if (NROW(bdf) == 0) return(tibble())
+
     log.df = lapply(seq_len(NROW(bdf)), function(i) {
       str = bdf$str[[i]]
       donum = bdf$donum[i]
