@@ -18,5 +18,3 @@ R/stata_fun.R
 R/stata_modules.R
 R/stata_util.R
 R/util.R
-inst/ado/r/repbox_intermediate_data.ado
-inst/ado/r/repbox_correct_path.ado
