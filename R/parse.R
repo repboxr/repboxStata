@@ -478,6 +478,9 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   # variable
   str = gsub("\t"," ", str, fixed=TRUE)
 
+  # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
+  str = trimws(str)
+
   saving = str.right.of(str,"saving#~br",not.found = NA)
   srows = which(!is.na(saving))
   if (length(srows)>0) {
@@ -486,26 +489,40 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   }
 
   quietly = rep(NA_character_, length(str))
-  rows = startsWith(str, "quietly:")
-  quietly[rows] = "quietly:"
-  str[rows] = str.right.of(str[rows],"quietly:")
-  rows = startsWith(str, "quietly ")
-  quietly[rows] = "quietly "
-  str[rows] = trimws(str.right.of(str[rows],"quietly "))
-  rows = startsWith(str, "qui ")
-  quietly[rows] = "qui "
-  str[rows] = trimws(str.right.of(str[rows],"qui "))
-
   capture = rep(NA_character_, length(str))
-  rows = startsWith(str, "capture:")
-  capture[rows] = "capture:"
-  str[rows] = str.right.of(str[rows],"capture:")
-  rows = startsWith(str, "capture ")
-  capture[rows] = "capture "
-  str[rows] = trimws(str.right.of(str[rows],"capture "))
-  rows = startsWith(str, "cap ")
-  capture[rows] = "cap "
-  str[rows] = trimws(str.right.of(str[rows],"cap "))
+  noisily = rep(NA_character_, length(str))
+
+  changed = TRUE
+  while(changed) {
+    changed = FALSE
+
+    rows = startsWith(str, "quietly:")
+    if (any(rows)) { quietly[rows] = "quietly:"; str[rows] = trimws(str.right.of(str[rows], "quietly:")); changed = TRUE }
+    rows = startsWith(str, "quietly ")
+    if (any(rows)) { quietly[rows] = "quietly "; str[rows] = trimws(str.right.of(str[rows], "quietly ")); changed = TRUE }
+    rows = startsWith(str, "qui:")
+    if (any(rows)) { quietly[rows] = "qui:"; str[rows] = trimws(str.right.of(str[rows], "qui:")); changed = TRUE }
+    rows = startsWith(str, "qui ")
+    if (any(rows)) { quietly[rows] = "qui "; str[rows] = trimws(str.right.of(str[rows], "qui ")); changed = TRUE }
+
+    rows = startsWith(str, "capture:")
+    if (any(rows)) { capture[rows] = "capture:"; str[rows] = trimws(str.right.of(str[rows], "capture:")); changed = TRUE }
+    rows = startsWith(str, "capture ")
+    if (any(rows)) { capture[rows] = "capture "; str[rows] = trimws(str.right.of(str[rows], "capture ")); changed = TRUE }
+    rows = startsWith(str, "cap:")
+    if (any(rows)) { capture[rows] = "cap:"; str[rows] = trimws(str.right.of(str[rows], "cap:")); changed = TRUE }
+    rows = startsWith(str, "cap ")
+    if (any(rows)) { capture[rows] = "cap "; str[rows] = trimws(str.right.of(str[rows], "cap ")); changed = TRUE }
+
+    rows = startsWith(str, "noisily:")
+    if (any(rows)) { noisily[rows] = "noisily:"; str[rows] = trimws(str.right.of(str[rows], "noisily:")); changed = TRUE }
+    rows = startsWith(str, "noisily ")
+    if (any(rows)) { noisily[rows] = "noisily "; str[rows] = trimws(str.right.of(str[rows], "noisily ")); changed = TRUE }
+    rows = startsWith(str, "noi:")
+    if (any(rows)) { noisily[rows] = "noi:"; str[rows] = trimws(str.right.of(str[rows], "noi:")); changed = TRUE }
+    rows = startsWith(str, "noi ")
+    if (any(rows)) { noisily[rows] = "noi "; str[rows] = trimws(str.right.of(str[rows], "noi ")); changed = TRUE }
+  }
 
 
   # change :\ ad :/ as this is part of file path
@@ -604,7 +621,7 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   saving[na.rows] = NA_character_
 
 
-  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, opens_block, closes_block, quietly, capture,orgline=orgline_start, orgline_start=orgline_start, orgline_end=orgline_end)
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, opens_block, closes_block, quietly, capture, noisily, orgline=orgline_start, orgline_start=orgline_start, orgline_end=orgline_end)
   tab = filter(tab, nchar(trimws(tab$txt))>0)
 
   # In do files with #delimit ; commands not always a unique
@@ -716,16 +733,46 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   restore.point("normalized.cmdlines.with.ph.to.tab")
 
   str = txt
+
+  # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
+  str = trimws(str)
+
   quietly = rep(NA_character_, length(str))
-  rows = startsWith(str, "quietly:")
-  quietly[rows] = "quietly:"
-  str[rows] = str.right.of(str[rows],"quietly:")
-  rows = startsWith(str, "quietly ")
-  quietly[rows] = "quietly "
-  str[rows] = trimws(str.right.of(str[rows],"quietly "))
-  rows = startsWith(str, "qui ")
-  quietly[rows] = "qui "
-  str[rows] = trimws(str.right.of(str[rows],"qui "))
+  capture = rep(NA_character_, length(str))
+  noisily = rep(NA_character_, length(str))
+
+  changed = TRUE
+  while(changed) {
+    changed = FALSE
+
+    rows = startsWith(str, "quietly:")
+    if (any(rows)) { quietly[rows] = "quietly:"; str[rows] = trimws(str.right.of(str[rows], "quietly:")); changed = TRUE }
+    rows = startsWith(str, "quietly ")
+    if (any(rows)) { quietly[rows] = "quietly "; str[rows] = trimws(str.right.of(str[rows], "quietly ")); changed = TRUE }
+    rows = startsWith(str, "qui:")
+    if (any(rows)) { quietly[rows] = "qui:"; str[rows] = trimws(str.right.of(str[rows], "qui:")); changed = TRUE }
+    rows = startsWith(str, "qui ")
+    if (any(rows)) { quietly[rows] = "qui "; str[rows] = trimws(str.right.of(str[rows], "qui ")); changed = TRUE }
+
+    rows = startsWith(str, "capture:")
+    if (any(rows)) { capture[rows] = "capture:"; str[rows] = trimws(str.right.of(str[rows], "capture:")); changed = TRUE }
+    rows = startsWith(str, "capture ")
+    if (any(rows)) { capture[rows] = "capture "; str[rows] = trimws(str.right.of(str[rows], "capture ")); changed = TRUE }
+    rows = startsWith(str, "cap:")
+    if (any(rows)) { capture[rows] = "cap:"; str[rows] = trimws(str.right.of(str[rows], "cap:")); changed = TRUE }
+    rows = startsWith(str, "cap ")
+    if (any(rows)) { capture[rows] = "cap "; str[rows] = trimws(str.right.of(str[rows], "cap ")); changed = TRUE }
+
+    rows = startsWith(str, "noisily:")
+    if (any(rows)) { noisily[rows] = "noisily:"; str[rows] = trimws(str.right.of(str[rows], "noisily:")); changed = TRUE }
+    rows = startsWith(str, "noisily ")
+    if (any(rows)) { noisily[rows] = "noisily "; str[rows] = trimws(str.right.of(str[rows], "noisily ")); changed = TRUE }
+    rows = startsWith(str, "noi:")
+    if (any(rows)) { noisily[rows] = "noi:"; str[rows] = trimws(str.right.of(str[rows], "noi:")); changed = TRUE }
+    rows = startsWith(str, "noi ")
+    if (any(rows)) { noisily[rows] = "noi "; str[rows] = trimws(str.right.of(str[rows], "noi ")); changed = TRUE }
+  }
+
 
   # change :\ ad :/ as this is part of file path
 
@@ -799,7 +846,7 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   cmd_br = replace.ph.keep.lines(cmd_br, ph.df)
   opts = replace.ph.keep.lines(opts, ph.df)
 
-  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts,txt, colon1, colon2,colon3, program, quietly)
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts,txt, colon1, colon2,colon3, program, quietly, capture, noisily)
 
   # Special treatment for outdated "for any" command in combi with regression. Like
   # for any y1 y2: reg X z1
