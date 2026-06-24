@@ -737,6 +737,13 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
   str = trimws(str)
 
+  saving = str.right.of(str,"saving#~br",not.found = NA_character_)
+  srows = which(!is.na(saving))
+  if (length(srows)>0) {
+    saving[srows] = str.left.of(saving[srows],"~#")
+    saving[srows] = paste0("#~br", saving[srows],"~#")
+  }
+
   quietly = rep(NA_character_, length(str))
   capture = rep(NA_character_, length(str))
   noisily = rep(NA_character_, length(str))
@@ -814,9 +821,9 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   if (length(wrows)>0) {
     weight_start = weight_start[wrows]
     rstr = substring(str[wrows], weight_start)
-    weight_end = stri_locate_first_fixed(rstr, "]")[,1]
+    weight_end = stri_locate_first_regex(rstr,"\\](?![a-z0-9A-Z_])")[,1]
     use_wrows = !is.na(weight_end)
-    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end-1)
+    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end[use_wrows]-1)
     str[wrows[use_wrows]] = stri_sub(str[wrows[use_wrows]], weight_start[use_wrows])
   }
 
@@ -838,6 +845,9 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   str = str.left.of(str,"=")
   arg_str = str
 
+  cmd2 = str.left.of(trimws(arg_str)," ", not.found=NA_character_) %>% trimws()
+  cmd2[startsWith(cmd2,"#~")] = NA_character_
+
   program = ifelse(startsWith(txt, "program define "), str.between(txt,"program define ", " "), NA)
 
   txt = replace.ph.keep.lines(txt, ph.df)
@@ -846,7 +856,11 @@ normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
   cmd_br = replace.ph.keep.lines(cmd_br, ph.df)
   opts = replace.ph.keep.lines(opts, ph.df)
 
-  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts,txt, colon1, colon2,colon3, program, quietly, capture, noisily)
+  na.rows = which(is.na(saving))
+  saving = replace.ph.keep.lines(saving, ph.df)
+  saving[na.rows] = NA_character_
+
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, quietly, capture, noisily)
 
   # Special treatment for outdated "for any" command in combi with regression. Like
   # for any y1 y2: reg X z1

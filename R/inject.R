@@ -552,6 +552,9 @@ inject.path.correction.pre = function(txt, lines=seq_along(txt), do) {
   content = fph$content
 
   content = gsub('"','', content, fixed = TRUE)
+  # Strip trailing semicolon so it never makes it into the injected CSV writing block
+  content = stringi::stri_replace_last_regex(content, ";[ \t]*$", "")
+
   file_str = rep("", length(txt))
   file_str[fph$line] = content
   cmd = ifelse(is.na(tab$saving), tab$cmd, "saving")

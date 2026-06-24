@@ -87,6 +87,10 @@ correct.do.paths = function(do, txt = tab$txt, dir=getwd()) {
 
 replace.files.and.paths.with.ph = function(tab, ph, txt=tab$txt) {
   restore.point("replace.files.and.paths.with.ph")
+
+  if (!has.col(tab, "cmd2")) {
+    stop("no col cmd2")
+  }
   txt = replace.ph.keep.lines(txt, ph)
   arg_str = replace.ph.keep.lines(tab$arg_str,ph)
   using = replace.ph.keep.lines(tab$using,ph)
@@ -126,7 +130,7 @@ replace.files.and.paths.with.ph = function(tab, ph, txt=tab$txt) {
     (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save","use")) |
     (tab$cmd %in% c("putexcel") & tab$cmd2 %in% c("set")) |
     (tab$cmd %in% "adopath" & tab$cmd2 %in% c("+"))
-  );
+  )
   rows = setdiff(rows, using.rows)
   n=length(rows)
   if (n>0) {
@@ -168,9 +172,13 @@ replace.files.and.paths.with.ph = function(tab, ph, txt=tab$txt) {
     pph = bind_rows(pph, npph)
   }
 
+  if (NROW(txt)!=NROW(pph)) {
+    stop("Not one placeholder per line....")
+  }
 
   list(txt=txt, ph=pph)
 }
+
 
 # Find closest directory to dir starting from end
 find.closest.dir = function(dir, dirs) {
