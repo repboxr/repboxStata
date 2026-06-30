@@ -1,172 +1,344 @@
-Yes, your understanding is completely correct! 
+The problem is that the regression command ends with a global macro variable (`${vlist_i_poly5}`). The function `inject.do` in `repboxStata/R/inject.R` attempts to identify closing lines of a block (like `}` or `end`) to exclude them from pre- and post-command injections by placing them into `no.study.lines`.
 
-The function `replace.files.and.paths.with.ph()` expects the `tab` dataframe to contain the columns `cmd2` and `saving`. While `repbox.do.table()` extracts and creates these columns during the parsing of a `.do` file, the simplified alternative `normalized.cmdlines.to.tab()` (which is called by `repbox.re.cmdlines.to.tab()`) currently skips them.
-
-This omission causes an error when `replace.files.and.paths.with.ph()` is called on the output of `repbox.re.cmdlines.to.tab()`, because it tries to access the non-existent `tab$cmd2` to identify subcommands (like `"excel"` in `"import excel"`) and `tab$saving` to safely replace placeholders inside `saving()` options.
-
-It absolutely makes sense to adapt `normalized.cmdlines.to.tab()` to behave consistently with `repbox.do.table()`. I've added the exact same extraction logic for `cmd2` and `saving` to the function. Additionally, I brought over a small bug fix regarding `weight` extraction indexing (`weight_end[use_wrows]`) that was already corrected in `repbox.do.table()`.
-
-Here is the modification:
-
-!MODIFICATION normalized.cmdlines.to.tab /home/rstudio/repbox/repboxStata/R/parse.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxStata/R/parse.R"
-function_name = "normalized.cmdlines.to.tab"
-description = "Add extraction of cmd2 and saving columns so that replace.files.and.paths.with.ph functions without error."
----
+However, the existing condition used for this check is:
 ```r
-normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
-  restore.point("normalized.cmdlines.with.ph.to.tab")
+endsWith(trimws(tab$txt), "}")
+```
+This unintentionally matches **any command** that ends with a Stata global macro like `${some_macro}`, causing it to be falsely ignored and bypassed during the code injection process. This is why you are seeing `capture: noisily:` added in the generated Stata run code but no `PRECOMAND INJECTION` or post-regression `ereturn list` appended.
 
-  str = txt
+To fix this, we can update the condition to check that the line ends with a `}` but only when it is not part of a Stata global macro parameter. We can do this with a regular expression that guarantees it's not a macro using `!grepl("\\$\\{[^}]+\\}$", ...)`:
 
-  # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
-  str = trimws(str)
+!MODIFICATION inject.do repboxStata/R/inject.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxStata/R/inject.R"
+function_name = "inject.do"
+description = "Fix no.study.lines matching global macros at the end of the line"
+---
+```R
+inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts()) {
+  restore.point("inject.do")
 
-  saving = str.right.of(str,"saving#~br",not.found = NA_character_)
-  srows = which(!is.na(saving))
-  if (length(srows)>0) {
-    saving[srows] = str.left.of(saving[srows],"~#")
-    saving[srows] = paste0("#~br", saving[srows],"~#")
+  project_dir=do$project_dir
+  id = tools::file_path_sans_ext(basename(do$file))
+  repbox.dir = file.path(project_dir,"repbox/stata")
+
+  tab = do$tab[[1]]
+  tab$org_cmd = ""
+
+
+  do$tab[[1]]$add.path.correction = tab$cmd %in% c("use","u","us","saveold", "save","sa","sav", "import","export","mkdir","erase","rm","guse","gsave","gzuse","gzsave") |
+    !is.na(tab$using) |
+    !is.na(tab$saving) |
+    (tab$cmd %in% c("graph","gr","gra") & tab$cmd2 %in% c("export","save")) |
+    (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save","use")) |
+    (tab$cmd %in% "adopath" & tab$cmd2 %in% c("+")) |
+    (tab$cmd %in% c("putexcel") & tab$cmd2 %in% c("set")) |
+    (tab$cmd == "cd" & trimws(tab$txt)!="cd")
+
+  ph = do$ph[[1]]
+  tab = do$tab[[1]]
+
+  tab$run.max = NA_integer_
+  if (!is.null(opts$loop.log.cmd.max)) {
+    rows = tab$in.program == 1 | tab$in_loop == 1
+    tab$run.max[rows] = opts$loop.log.cmd.max
   }
 
-  quietly = rep(NA_character_, length(str))
-  capture = rep(NA_character_, length(str))
-  noisily = rep(NA_character_, length(str))
+  if (!is.null(opts$loop.log.reg.max)) {
+    reg_rows = which(tab$is.regcmd & (tab$in.program == 1 | tab$in_loop == 1))
+    if (length(reg_rows) > 0) {
+      tab$run.max[reg_rows] = opts$loop.log.reg.max
+    }
+  }
+  do$tab[[1]] = tab
 
-  changed = TRUE
-  while(changed) {
-    changed = FALSE
 
-    rows = startsWith(str, "quietly:")
-    if (any(rows)) { quietly[rows] = "quietly:"; str[rows] = trimws(str.right.of(str[rows], "quietly:")); changed = TRUE }
-    rows = startsWith(str, "quietly ")
-    if (any(rows)) { quietly[rows] = "quietly "; str[rows] = trimws(str.right.of(str[rows], "quietly ")); changed = TRUE }
-    rows = startsWith(str, "qui:")
-    if (any(rows)) { quietly[rows] = "qui:"; str[rows] = trimws(str.right.of(str[rows], "qui:")); changed = TRUE }
-    rows = startsWith(str, "qui ")
-    if (any(rows)) { quietly[rows] = "qui "; str[rows] = trimws(str.right.of(str[rows], "qui ")); changed = TRUE }
+  tab$commented.out = FALSE
+  tab$add.capture=FALSE
 
-    rows = startsWith(str, "capture:")
-    if (any(rows)) { capture[rows] = "capture:"; str[rows] = trimws(str.right.of(str[rows], "capture:")); changed = TRUE }
-    rows = startsWith(str, "capture ")
-    if (any(rows)) { capture[rows] = "capture "; str[rows] = trimws(str.right.of(str[rows], "capture ")); changed = TRUE }
-    rows = startsWith(str, "cap:")
-    if (any(rows)) { capture[rows] = "cap:"; str[rows] = trimws(str.right.of(str[rows], "cap:")); changed = TRUE }
-    rows = startsWith(str, "cap ")
-    if (any(rows)) { capture[rows] = "cap "; str[rows] = trimws(str.right.of(str[rows], "cap ")); changed = TRUE }
+  org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
 
-    rows = startsWith(str, "noisily:")
-    if (any(rows)) { noisily[rows] = "noisily:"; str[rows] = trimws(str.right.of(str[rows], "noisily:")); changed = TRUE }
-    rows = startsWith(str, "noisily ")
-    if (any(rows)) { noisily[rows] = "noisily "; str[rows] = trimws(str.right.of(str[rows], "noisily ")); changed = TRUE }
-    rows = startsWith(str, "noi:")
-    if (any(rows)) { noisily[rows] = "noi:"; str[rows] = trimws(str.right.of(str[rows], "noi:")); changed = TRUE }
-    rows = startsWith(str, "noi ")
-    if (any(rows)) { noisily[rows] = "noi "; str[rows] = trimws(str.right.of(str[rows], "noi ")); changed = TRUE }
+  new.txt = txt
+
+  block.rows = tab$opens_block & (!(is.na(tab$quietly)) | !is.na(tab$capture))
+  if (sum(block.rows) >0) {
+    cmds = tab$cmd[block.rows]
+    rows = !is.na(tab$capture[block.rows])
+    cmds[rows] = trimws(tab$capture[block.rows][rows])
+
+    rows = !is.na(tab$quietly[block.rows])
+    cmds[rows] = trimws(tab$quietly[block.rows][rows])
+
+    new.txt[block.rows] = stringi::stri_replace_first(new.txt[block.rows],fixed=cmds, replacement = paste0(cmds, " noisily"))
   }
 
+  rows = startsWith(trimws(new.txt),"quietly:") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "quietly:") %>% trimws()
 
-  # change :\ ad :/ as this is part of file path
+  rows = startsWith(trimws(new.txt),"quietly ") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "quietly ") %>% trimws()
+  rows = startsWith(trimws(new.txt),"qui ") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "qui ") %>% trimws()
 
-  str =gsub(":\\","~;~\\", str, fixed=TRUE)
-  str =gsub(":/","~;~\\", str, fixed=TRUE)
-
-  colon1 = str.left.of(str, ":",not.found = NA) %>% trimws()
-  str = str.right.of(str, ":")
-  colon2 = str.left.of(str, ":",not.found = NA) %>% trimws()
-  str = str.right.of(str, ":")
-  colon3 = str.left.of(str, ":",not.found = NA) %>% trimws()
-  str = str.right.of(str, ":") %>% trimws()
-  str = gsub("~;~\\",":\\", str, fixed=TRUE)
-
-  # Some commands use : in a different way. Then don't store colon stuff
-  no.colon = which(startsWith(txt, "merge"))
-  if (length(no.colon) > 0) {
-    colon1[no.colon] = colon2[no.colon] = colon3[no.colon] = NA
-    str[no.colon] = txt[no.colon]
-  }
-
-  str = gsub(","," ,", str, fixed=TRUE)
-  cmd = str.left.of(str," ")
-  str = paste0(" ",str.right.of(str," "))
-  cmd_br = str.right.of(cmd,"#~br",not.found=NA)
-  cmd_br = ifelse(is.na(cmd_br),NA,paste0("#~br",cmd_br))
-  cmd = str.left.of(cmd, "#")
-
-  opts = str.right.of(str,",",not.found=NA) %>% trimws()
-  str = str.left.of(str,",")
-
-  # Extracting weight variables [myweight] got more complicated:
-  # if conditions can also contain [] like if id=id[_n-1]
-  # we thus suppose that a weight string must have a space before
-  # need to check whether that is indeed always the case
-  weight = rep("", length(str))
-  weight_start = stri_locate_first_regex(str,"(?<![a-z0-9A-Z_])\\[")[,1]
-  wrows = which(!is.na(weight_start))
-  if (length(wrows)>0) {
-    weight_start = weight_start[wrows]
-    rstr = substring(str[wrows], weight_start)
-    weight_end = stri_locate_first_regex(rstr,"\\](?![a-z0-9A-Z_])")[,1]
-    use_wrows = !is.na(weight_end)
-    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end[use_wrows]-1)
-    str[wrows[use_wrows]] = stri_sub(str[wrows[use_wrows]], weight_start[use_wrows])
-  }
-
-
-  #weight = str.between(str,"[","]", not.found=NA) %>% trimws()
-  #str = str.left.of(str,"[")
-
-
-  # Default order is if, in, using
-  # but sometimes different order is used like using, if
-
-  res = extract.if.in.using(str)
-  str = res$str
-  using = res$parts$using
-  in_arg = res$parts[["in"]]
-  if_arg = res$parts[["if"]]
-
-  exp = str.right.of(str,"=",not.found=NA)  %>% trimws()
-  str = str.left.of(str,"=")
-  arg_str = str
-
-  cmd2 = str.left.of(trimws(arg_str)," ", not.found=NA_character_) %>% trimws()
-  cmd2[startsWith(cmd2,"#~")] = NA_character_
-
-  program = ifelse(startsWith(txt, "program define "), str.between(txt,"program define ", " "), NA)
-
-  txt = replace.ph.keep.lines(txt, ph.df)
-  arg_str = replace.ph.keep.lines(arg_str, ph.df)
-  exp = replace.ph.keep.lines(exp, ph.df)
-  cmd_br = replace.ph.keep.lines(cmd_br, ph.df)
-  opts = replace.ph.keep.lines(opts, ph.df)
-
-  na.rows = which(is.na(saving))
-  saving = replace.ph.keep.lines(saving, ph.df)
-  saving[na.rows] = NA_character_
-
-  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, quietly, capture, noisily)
-
-  # Special treatment for outdated "for any" command in combi with regression. Like
-  # for any y1 y2: reg X z1
-  # We cant well handle those regressions and thus change the command name
-  rows = which(startsWith(tab$colon1,"for any"))
+  rows = which(tab$cmd == "table")
   if (length(rows)>0) {
-    regcmds = get.regcmds()
-    rows = which(startsWith(tab$colon1,"for any") & tab$cmd %in% regcmds)
-    tab$cmd[rows] = paste0("__for_any_", tab$cmd[rows])
+    is.pre.table = is.pre.Stata17.table.command(tab$txt[rows])
+    if (is.pre.table) {
+      new.txt[rows] = paste0("version 16: ", new.txt[rows])
+    }
+  }
+
+  lines = which(tab$add.path.correction)
+  new.txt[lines] = inject.path.correction.change.cmd(new.txt[lines], lines, do=do)
+
+  lines = which(!(
+    is.true(tab$opens_block) | tab$in.program >= 2 |
+      tab$cmd %in% c("}","foreach","forvalues","forval", "if","else","end", "while")
+  ))
+
+  new.txt[lines] = paste0("capture:  noisily: ",  new.txt[lines])
+  tab$add.capture[lines] = TRUE
+
+  do$tab[[1]] = tab
+
+  ends_with_rbrace_not_macro = endsWith(trimws(tab$txt), "}") & !grepl("\\$\\{[^}]+\\}$", trimws(tab$txt))
+  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | ends_with_rbrace_not_macro )
+
+  no.study.lines = union(no.study.lines,
+    which(
+      (tab$opens_block & tab$in.program == 1) |
+      (tab$opens_block & lag(tab$in_loop %in% c(1,2)))
+    )
+  )
+
+  if (!opts$report.inside.program) {
+    no.study.lines = union(no.study.lines, which(tab$in.program == 1))
+  }
+
+  special.lines = NULL
+
+  if (do$does.include & do$use.includes) {
+    incl.df = do$incl.df[[1]]
+    incl.df = adapt.incl.df.for.stata.vars(incl.df,do$project_dir)
+
+    incl.do.df = filter(incl.df, cmd=="do" | cmd == "run")
+
+    lines = incl.do.df$line
+
+    new.txt[lines] = paste0(
+      '\ndisplay "#~# START INCLUDE INJECTION ',do$donum,"_", lines,
+      incl.do.df$find.file.code,
+      '\ncapture: noisily: do "',incl.do.df$repbox.file,'", nostop',
+      '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
+    )
+
+    incl.do.df = filter(incl.df, cmd=="include")
+    lines = incl.do.df$line
+    new.txt[lines] = paste0(
+      '\ndisplay "#~# START INCLUDE INJECTION ',do$donum,"_", lines,
+      '\ninclude "',incl.do.df$repbox.file,'"',
+      '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
+    )
+  }
+
+  before.inject.txt = new.txt
+
+  lines = which(tab$cmd == "clear" & startsWith(trimws(tab$arg_str), "all"))
+  if (length(lines)>0) {
+    cat(paste0("\nReplace ", length(lines)," 'clear all' command in ", do$dofile," with 'clear' to prevent loss of repbox global variables.\n"))
+    new.txt[lines] = stringi::stri_replace_first_regex(new.txt[lines], "\\ball\\b", "")
+    #new.txt[lines] = "clear"
   }
 
 
-  tab = tab.repair.input.cmds(tab)
+  lines = setdiff(
+    which(tab$cmd %in% c("save", "sa", "sav", "saveold", "gsave", "gzsave","erase","rm")),
+    no.study.lines
+  )
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
 
-  if (is.null(orglines))
-    tab$orgline = orglines
-  tab = filter(tab, nchar(trimws(tab$txt))>0)
-  tab$line = seq_len(NROW(tab))
+  lines = setdiff(
+    which(tab$cmd %in% c("erase","rm")),
+    no.study.lines
+  )
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
 
-  tab
+  lines = setdiff(which(tab$cmd %in% c("use","u","us", "save","sa", "sav", "saveold", "clear","import","guse","gsave","gzuse","gzsave","rm","erase")), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.use.etc(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  # CACHE INJECTIONS
+  cache_cmds = repbox_always_cache_cmd()
+  lines = setdiff(which(tab$cmd %in% cache_cmds), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.cache_always(txt[lines], lines, do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+
+  lines = setdiff(which(tab$cmd %in% c("preserve","restore")), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.preserve.restore(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+  lines = setdiff(which(tab$cmd %in% c("esttab") & !is.na(tab$using)), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.esttab.etc(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  lines = setdiff(which(tab$in_loop ==2), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.loop(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  gcmds = get.graphcmds()
+  ngcmds = get.nographcmds()
+  lines = setdiff(which(tab$cmd %in% gcmds & !(tab$cmd %in% ngcmds$cmd & tab$cmd2 %in% ngcmds)), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.graph.save(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  if (opts$report.inside.program) {
+    lines = which(tab$cmd == "program")
+    new.txt[lines] = paste0(new.txt[lines],'\ndisplay "!.REPBOX.CUSTOM.PROGRAM>*"')
+  }
+
+  if (opts$extract.reg.info) {
+    if (!require(repboxStataReg)) {
+      cat("\nInjection of specific regression information is planned for a new package repboxReg. That package does not yet exist.\n")
+      opts$extract.reg.info = FALSE
+    }
+  }
+
+  if (opts$extract.reg.info) {
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  } else {
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg.simple(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
+  quasi_cmds = stata_cmds_quasireg()
+  lines = quasi.rows = setdiff(which(tab$cmd %in% quasi_cmds), c(no.study.lines, special.lines))
+  if (length(lines) > 0) {
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg.simple(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
+
+  if (isTRUE(opts$extract.scalar.vals)) {
+    lines = reg.rows = setdiff(which(tab$cmd %in% "scalar"), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.scalar(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
+  lines = which(startsWith(new.txt, "set maxvar"))
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  lines = which(tab$cmd %in% c("br","browse", "pause","cls","stop") | (tab$cmd == "set" & is.true(startsWith(tab$cmd2,"trace"))))
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  lines = which(tab$cmd %in% c("log","translate") )
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  if (isTRUE(opts$comment.out.install)) {
+    lines = which(has.substr(new.txt, "ssc ") & has.substr(new.txt, " install "))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+
+    lines = which(has.substr(new.txt, "sysdir ") & has.substr(new.txt, " set "))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+
+  }
+
+  if (!do$use.includes) {
+    lines = which(tab$cmd %in% c("do","include","run"))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+  }
+
+  lines = setdiff(seq_len(NROW(tab)), c(special.lines, no.study.lines))
+  inj.txt = injection.other(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+  lines = setdiff(which(!tab$commented.out), no.study.lines)
+  inj.txt = pre.injection(txt[lines],lines,do)
+  new.txt[lines] = paste0(inj.txt,new.txt[lines])
+
+  lines = setdiff(which(!is.na(tab$run.max)), no.study.lines)
+  new.txt[lines] = inject.loop.max.run(new.txt[lines], before.inject.txt[lines], lines, do)
+
+  tab$new.txt = new.txt
+
+  org.file = do$file
+  do.dir = dirname(org.file)
+  org.base = basename(org.file)
+  new.base = paste0("repbox_", org.base)
+  new.file = file.path(do.dir, new.base)
+
+  log.file = normalizePath(file.path(repbox.dir,"logs", paste0("log_", do$donum,".log")), mustWork=FALSE,winslash = "/")
+
+  incl.log.file = normalizePath(file.path(repbox.dir,"logs", paste0("include_", do$donum,".log")), mustWork=FALSE, winslash = "/")
+
+  log.name = paste0("repbox_log_", do$donum)
+
+  start.timer.file = paste0(project_dir,"/repbox/stata/timer/start.txt")
+  end.timer.file = paste0(project_dir,"/repbox/stata/timer/end.txt")
+
+  txt = c(paste0('
+file open repbox_timer_file using "', start.timer.file,'", write append
+file write repbox_timer_file "', do$donum,';`c(current_time)\';`c(current_date)\'"
+file write repbox_timer_file _n
+file close repbox_timer_file
+
+if "$repbox_cmd_count" == "" {
+  set_defaults _all
+  set more off
+  global repbox_cmd_count = 0
+  global repbox_root_donum = ', do$donum,'
+  log using \"',log.file,'\", replace name(',log.name,')
+  ', adopath.injection.code(project_dir),'
+}
+else {
+  log using \"',incl.log.file,'\", replace name(',log.name,')
+}
+'),
+          new.txt,
+          paste0('
+display "#~# FINISHED DO",
+capture log close ', log.name,'
+
+file open repbox_timer_file using "', end.timer.file,'", write append
+file write repbox_timer_file "', do$donum,';`c(current_time)\';`c(current_date)\'"
+file write repbox_timer_file _n
+file close repbox_timer_file
+'
+          ))
+
+  writeLines(txt, new.file)
+  return(list(do=do,txt=invisible(txt)))
 }
 ```
-!END_MODIFICATION normalized.cmdlines.to.tab /home/rstudio/repbox/repboxStata/R/parse.R
+!END_MODIFICATION inject.do repboxStata/R/inject.R

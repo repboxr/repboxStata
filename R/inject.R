@@ -95,7 +95,8 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   do$tab[[1]] = tab
 
-  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | endsWith(trimws(tab$txt),"}"))
+  ends_with_rbrace_not_macro = endsWith(trimws(tab$txt), "}") & !grepl("\\$\\{[^}]+\\}$", trimws(tab$txt))
+  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | ends_with_rbrace_not_macro )
 
   no.study.lines = union(no.study.lines,
     which(
@@ -359,6 +360,9 @@ post.injection = function(txt, lines, do, report.xtset=FALSE, opts = rbs.opts())
   tab = do$tab[[1]]
   errcode_str = ifelse(is.true(tab$add.capture[lines]),"`=_rc\'","")
 
+  # Ensure report.xtset aligns cleanly when pasted into vector operations
+  xtset_cmd = ifelse(report.xtset, '\ncapture xtset', '')
+  xtset_write = ifelse(report.xtset, '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'', ';;')
 
   inj.txt = paste0(
     '
@@ -366,14 +370,14 @@ post.injection = function(txt, lines, do, report.xtset=FALSE, opts = rbs.opts())
 qui {
 file open repbox_cmd_file using "', cmdfile,'", write append
 file write repbox_cmd_file `"', do$donum,';', lines,';`repbox_local_cmd_count\';$S_TIME;',errcode_str,';;','"\'',
-if (report.xtset) '\ncapture xtset',
+xtset_cmd,
 '\nfile write repbox_cmd_file `"',
-if (report.xtset) '`r(timevar)\';`r(panelvar)\';`r(tdelta)\'' else ';;',
+xtset_write,
 '"\'','
 file write repbox_cmd_file _n
 file close repbox_cmd_file
-',
-'\n}'
+}
+'
   )
   # Don't inject code if a block is opened (if, foreach etc)
   inj.txt[tab$opens_block[lines]] = ""
@@ -726,6 +730,7 @@ injection.preserve.restore = function(txt, lines=seq_along(txt), do) {
 injection.loop = function(txt, lines, do) {
   restore.point("injection.loop")
   str = ""
+  str
 }
 
 # No special reg info will be stored but we store
@@ -736,6 +741,7 @@ injection.reg.simple = function(txt, lines, do, save.graphs=TRUE) {
 ', end.injection(do$donum, lines, "RUNCMD",do),'
 ',post.injection(txt,lines,do=do, report.xtset=TRUE),'
 ')
+  str
 }
 
 injection.scalar = function(txt, lines, do, save.graphs=TRUE) {
@@ -785,6 +791,7 @@ injection.other = function(txt, lines, do, save.graphs=TRUE) {
 ', end.injection(do$donum, lines, "RUNCMD",do),'
 ',post.injection(txt,lines,do=do),'
 ')
+  str
 }
 
 # Check if a table command looks like in pre Stata17 format
