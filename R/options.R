@@ -39,6 +39,7 @@ repbox_stata_opts = function(
   store.data = NULL,
   store.use.data.sig = !is.null(store.data),
   loop.log.cmd.max = 10000,
+  loop.log.reg.max = 25,
   comment.out.install = TRUE,
   check.stata.paths.and.ado = TRUE,
   rerun.failed.included.do = TRUE,

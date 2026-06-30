@@ -134,7 +134,20 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list(), repbox_res
 
 
   repdb_save_parcels(parcels[c("stata_run_cmd","stata_run_log","stata_run_info", "xtvar")], file.path(project_dir, "repdb") )
+  parcels = make_stata_reg_run_cmd_parcel(project_dir, parcels=parcels)
   invisible(parcels)
+}
+
+make_stata_reg_run_cmd_parcel = function(project_dir, parcels=list()) {
+  restore.point("make_stata_reg_run_cmd_parcel")
+
+  parcels = repdb_load_parcels(project_dir, "stata_run_cmd", parcels=parcels)
+  run_df = parcels$stata_run_cmd
+  run_df = set_run_df_cmd_type(run_df)
+  parcels$stata_reg_run_cmd = run_df %>% filter(cmd_type=="reg")
+  repdb_save_parcels(parcels[c("stata_reg_run_cmd")], file.path(project_dir, "repdb") )
+  invisible(parcels)
+
 }
 
 
@@ -204,4 +217,9 @@ make_parcel_stata_do_run_info = function(project_dir, parcels = list()) {
   parcels
 }
 
+set_run_df_cmd_type = function(run_df) {
+  cmd_types = repboxDRF::drf_stata_cmd_types_vec()
+  run_df$cmd_type = cmd_types[run_df$cmd]
+  run_df
+}
 

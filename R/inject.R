@@ -37,6 +37,13 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     rows = tab$in.program == 1 | tab$in_loop == 1
     tab$run.max[rows] = opts$loop.log.cmd.max
   }
+
+  if (!is.null(opts$loop.log.reg.max)) {
+    reg_rows = which(tab$is.regcmd & (tab$in.program == 1 | tab$in_loop == 1))
+    if (length(reg_rows) > 0) {
+      tab$run.max[reg_rows] = opts$loop.log.reg.max
+    }
+  }
   do$tab[[1]] = tab
 
 
