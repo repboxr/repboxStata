@@ -47,12 +47,14 @@ run_stata_do = function(do.file, stata_bin=get_stata_bin(), set.dir=TRUE, nostop
   end.time = Sys.time()
   runtime = as.numeric(Sys.time()-start.time)
 
-  if (!is_empty(timeout) & !is_windows) {
-    if (res != 0) {
+  if (!is_empty(timeout) & use.timeout & !is_windows) {
+    if (res == 124) {
       if (verbose) {
         cat(paste0("\n    stopped due to timeout (", timeout, " seconds.)\n"))
       }
       return(list(timeout=TRUE, runtime=runtime))
+    } else if (res != 0) {
+      stop(paste0("There was an error (code ", res,") when running the Stata command:\n\n", cmd, "\n\nPossible you have to specify the path to the Stata binary by calling set_stata_paths(...)."),call. = FALSE)
     }
   } else if (res!=0) {
     stop(paste0("There was an error (code ", res,") when running the Stata command:\n\n", cmd, "\n\nPossible you have to specify the path to the Stata binary by calling set_stata_paths(...)."),call. = FALSE)

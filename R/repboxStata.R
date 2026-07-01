@@ -328,6 +328,10 @@ stata.inject.and.run = function(do, reg.cmds = get.regcmds(), save.changed.data=
     if (isTRUE(runsec > opts$all.do.timeout)) {
       do$timeout = TRUE
       do$runtime = NA
+
+      msg = paste0("Global timeout (duration: ", opts$all.do.timeout, " sec.) reached. Skipping do file: ", do$dofile, ".")
+      repboxUtils::repbox_problem(msg = msg, type = "stata_reproduction_global_timeout", project_dir = do$project_dir, fail_action = "msg")
+
       return(do)
     }
   }
@@ -372,6 +376,11 @@ run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
 
   do$timeout = res$timeout
   do$runtime = res$runtime
+
+  if (isTRUE(do$timeout)) {
+    msg = paste0("Timeout (duration: ", timeout, " sec.) during Stata reproduction of do file: ", do$dofile, ".")
+    repboxUtils::repbox_problem(msg = msg, type = "stata_reproduction_timeout", project_dir = project_dir, fail_action = "msg")
+  }
 
   return(invisible(do))
 }
