@@ -52,6 +52,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
 
+  ignore_lines = identify_ignore_lines(tab)
+  if (length(ignore_lines) > 0) {
+    txt[ignore_lines] = paste0("repbox_ignore: ", txt[ignore_lines])
+  }
+
   new.txt = txt
 
   block.rows = tab$opens_block & (!(is.na(tab$quietly)) | !is.na(tab$capture))
@@ -107,6 +112,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   if (!opts$report.inside.program) {
     no.study.lines = union(no.study.lines, which(tab$in.program == 1))
+  }
+
+  # Temporarily treat ignored commands as un-studiable to prevent extraction injections
+  if (length(ignore_lines) > 0) {
+    no.study.lines = union(no.study.lines, ignore_lines)
   }
 
   special.lines = NULL
@@ -273,6 +283,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     tab$commented.out[lines] = TRUE
   }
 
+  # Remove ignore commands from no.study.lines so they are logged explicitly as 'repbox_ignore:'
+  if (length(ignore_lines) > 0) {
+    no.study.lines = setdiff(no.study.lines, ignore_lines)
+  }
+
   lines = setdiff(seq_len(NROW(tab)), c(special.lines, no.study.lines))
   inj.txt = injection.other(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt)
@@ -333,6 +348,31 @@ file close repbox_timer_file
 
   writeLines(txt, new.file)
   return(list(do=do,txt=invisible(txt)))
+}
+identify_ignore_lines = function(tab) {
+  restore.point("identify_ignore_lines")
+  slow = stata_cmds_ignore()
+  ignore = is.true(tab$cmd %in% slow)
+
+  # Check prefix columns for slow commands
+  for (col in c("colon1", "colon2", "colon3")) {
+    if (!is.null(tab[[col]])) {
+      col_vals = tab[[col]]
+      col_vals[is.na(col_vals)] = ""
+      words = strsplit(col_vals, " ")
+      has_slow = sapply(words, function(w) any(w %in% slow))
+      ignore = ignore | has_slow
+
+      # Also explicitly check for multi-word prefixes that bypass the slow list
+      ignore = ignore | (col_vals %in% c("mi estimate", "mi est"))
+    }
+  }
+
+  # Multi-word commands not caught by simple cmd checks
+  ignore = ignore | is.true(tab$cmd == "mi" & tab$cmd2 %in% c("estimate", "est"))
+  ignore = ignore | is.true(tab$cmd == "svy" & tab$cmd2 %in% c("bootstrap", "bs", "jackknife", "jknife", "brr"))
+
+  return(which(ignore))
 }
 
 

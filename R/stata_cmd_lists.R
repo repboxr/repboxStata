@@ -40,3 +40,9 @@ repbox_always_cache_cmd = function() {
   # so it is better to cache afterwards
   c("merge","joinby","cem", "append", "cross", "fmerge")
 }
+
+# time intensive commands that we will ignore in our analysis
+stata_cmds_ignore = function() {
+  c("bootstrap", "bs", "jackknife", "jknife", "permute", "simulate",
+    "bayes", "bayesboot")
+}

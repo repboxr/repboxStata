@@ -1,20 +1,71 @@
-The problem is that the regression command ends with a global macro variable (`${vlist_i_poly5}`). The function `inject.do` in `repboxStata/R/inject.R` attempts to identify closing lines of a block (like `}` or `end`) to exclude them from pre- and post-command injections by placing them into `no.study.lines`.
+Yes, this is an excellent and elegant way to achieve your goal!
 
-However, the existing condition used for this check is:
+By modifying the parsed command text to include `repbox_ignore: ` *before* passing it to the injection wrappers, we automatically achieve two things at once:
+1. **Stata skips execution:** Because the line will be generated as `capture noisily: repbox_ignore: bs "TOT_logit"...`, Stata safely skips evaluating the heavy `bs` program.
+2. **The CSV logs explicitly track the bypass:** Because `pre.injection()` passes the modified `txt` string straight to the `precmd.csv` file, your `stata_run_cmd` parcel will explicitly show `repbox_ignore: bs "TOT_logit"...` in its `cmdline` column. You will easily see that it was safely bypassed.
+
+By moving these skipped commands temporarily to `no.study.lines` during the AST walk, we also make sure `repboxStata` won’t attempt to perform intermediate data caching, or regression-result extractions on an empty/outdated `e(b)` vector!
+
+Here are the code changes to implement this exactly as discussed:
+
+!MODIFICATION stata_cmds_ignore repboxStata/R/stata_cmd_lists.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxStata/R/stata_cmd_lists.R"
+insert_bottom = true
+description = "Add a function returning the list of slow Stata commands to ignore."
+---
 ```r
-endsWith(trimws(tab$txt), "}")
+stata_cmds_ignore = function() {
+  c("bootstrap", "bs", "jackknife", "jknife", "permute", "simulate",
+    "statsby", "rolling", "bayes", "bayesboot")
+}
 ```
-This unintentionally matches **any command** that ends with a Stata global macro like `${some_macro}`, causing it to be falsely ignored and bypassed during the code injection process. This is why you are seeing `capture: noisily:` added in the generated Stata run code but no `PRECOMAND INJECTION` or post-regression `ereturn list` appended.
+!END_MODIFICATION stata_cmds_ignore repboxStata/R/stata_cmd_lists.R
 
-To fix this, we can update the condition to check that the line ends with a `}` but only when it is not part of a Stata global macro parameter. We can do this with a regular expression that guarantees it's not a macro using `!grepl("\\$\\{[^}]+\\}$", ...)`:
+
+!MODIFICATION identify_ignore_lines repboxStata/R/inject.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxStata/R/inject.R"
+insert_after_fun = "inject.do"
+description = "Add a helper function to identify slow commands that should be ignored."
+---
+```r
+identify_ignore_lines = function(tab) {
+  restore.point("identify_ignore_lines")
+  slow = stata_cmds_ignore()
+  ignore = is.true(tab$cmd %in% slow)
+
+  # Check prefix columns for slow commands
+  for (col in c("colon1", "colon2", "colon3")) {
+    if (!is.null(tab[[col]])) {
+      col_vals = tab[[col]]
+      col_vals[is.na(col_vals)] = ""
+      words = strsplit(col_vals, " ")
+      has_slow = sapply(words, function(w) any(w %in% slow))
+      ignore = ignore | has_slow
+
+      # Also explicitly check for multi-word prefixes that bypass the slow list
+      ignore = ignore | (col_vals %in% c("mi estimate", "mi est"))
+    }
+  }
+
+  # Multi-word commands not caught by simple cmd checks
+  ignore = ignore | is.true(tab$cmd == "mi" & tab$cmd2 %in% c("estimate", "est"))
+  ignore = ignore | is.true(tab$cmd == "svy" & tab$cmd2 %in% c("bootstrap", "bs", "jackknife", "jknife", "brr"))
+
+  return(which(ignore))
+}
+```
+!END_MODIFICATION identify_ignore_lines repboxStata/R/inject.R
+
 
 !MODIFICATION inject.do repboxStata/R/inject.R
 scope = "function"
 file = "/home/rstudio/repbox/repboxStata/R/inject.R"
 function_name = "inject.do"
-description = "Fix no.study.lines matching global macros at the end of the line"
+description = "Modify inject.do to prefix slow commands with repbox_ignore and safely skip their inner extractions."
 ---
-```R
+```r
 inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts()) {
   restore.point("inject.do")
 
@@ -57,6 +108,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
   tab$add.capture=FALSE
 
   org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
+
+  ignore_lines = identify_ignore_lines(tab)
+  if (length(ignore_lines) > 0) {
+    txt[ignore_lines] = paste0("repbox_ignore: ", txt[ignore_lines])
+  }
 
   new.txt = txt
 
@@ -113,6 +169,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   if (!opts$report.inside.program) {
     no.study.lines = union(no.study.lines, which(tab$in.program == 1))
+  }
+
+  # Temporarily treat ignored commands as un-studiable to prevent extraction injections
+  if (length(ignore_lines) > 0) {
+    no.study.lines = union(no.study.lines, ignore_lines)
   }
 
   special.lines = NULL
@@ -279,6 +340,11 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     tab$commented.out[lines] = TRUE
   }
 
+  # Remove ignore commands from no.study.lines so they are logged explicitly as 'repbox_ignore:'
+  if (length(ignore_lines) > 0) {
+    no.study.lines = setdiff(no.study.lines, ignore_lines)
+  }
+
   lines = setdiff(seq_len(NROW(tab)), c(special.lines, no.study.lines))
   inj.txt = injection.other(txt[lines],lines,do)
   new.txt[lines] = paste0(new.txt[lines], inj.txt)
@@ -342,3 +408,5 @@ file close repbox_timer_file
 }
 ```
 !END_MODIFICATION inject.do repboxStata/R/inject.R
+
+*(Don't forget to include the `repbox_ignore.ado` source file within your `inst/ado` directory in your internal package source code so it can successfully be distributed to Docker runtimes.)*
