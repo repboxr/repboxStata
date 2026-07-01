@@ -1162,7 +1162,8 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
 
   do$tab[[1]] = tab
 
-  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | endsWith(trimws(tab$txt),"}"))
+  ends_with_rbrace_not_macro = endsWith(trimws(tab$txt), "}") & !grepl("\\$\\{[^}]+\\}$", trimws(tab$txt))
+  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | ends_with_rbrace_not_macro )
 
   no.study.lines = union(no.study.lines,
     which(
@@ -6051,777 +6052,113 @@ is_negative = function(n) {
 # Your Task
 ##################################
 
-I have a problem in an example. The command 
+So normally in a loop the number of maximum regressions whose information shall be stored should be bounded by 25 by default. But I think this bound does not yet apply for the regression in the program `TOT_logit` that will be called by the bootstrap command `bs "TOT_logit" b=r(b), reps(1000)` in the code below.
 
-reg hc ${instruments1} ${vlist_poly5} ${vlist_i_poly5}
-
-is completely ignored and no output stored (see report below).
+Can you check and explain. Is there a simple way to the bound also to regression commands in programms that shall trigger if the programm is called more than 25 (default value) times? 
 
 ```
-# repboxReportDo plain do report
-
-Project dir: /home/rstudio/repbox/projects_test/test
-Generated: 2026-06-30 12:46:45
-Included do files: 1
-Known Stata command rows from stata_cmd: 6
-
-Loaded parcel summary:
-  stata_source: 1 rows
-  stata_cmd: 6 rows
-  stata_run_cmd: 5 rows
-  stata_run_log: 5 rows
-  regcheck: 1 rows
-
-Options:
-  show_regcheck = TRUE
-  show_all_err = TRUE
-  show_all_log = FALSE
-  show_reg_log = TRUE
-  only_do_with_reg = TRUE
-  only_do_with_prob_reg = FALSE
-  split_by_do = FALSE
-  show_line_num = TRUE
-  show_nonreg_issue_errors = FALSE
-  df_exclude_vars = 
-  df_long_nchar = 10
-  df_long_max_chars = 
-  df_long_max_chars_by_var = 
-  max_runs_shown = 5
-  max_regcheck_runs_shown = 5
-
-Report convention: selected diagnostics are inserted directly below the Stata command line to which they most likely belong. Regression commands are identified only by stata_cmd$is_reg.
+**SETUP**
+*load data -- these data were obtained online from the Angrist Archive on 5/22/2010
+use cps3re74.dta, clear //observational sample
+*use nswre74.dta, clear //experimental sample
 
 
+set seed 12345
 
-================================================================================
-DO FILE: code/aejpol_5_4_2_Table8.do
-================================================================================
+***COMPARISON OF WEIGHTS***
 
-    1  use EU_data.dta, clear
-    2  
-    3  global vlist_poly5  "gdpcap_5 gdpcap_4 gdpcap_3 gdpcap_2 gdpcap"
-    4  global vlist_i_poly5  "gdpcap_i_5 gdpcap_i_4 gdpcap_i_3 gdpcap_i_2 gdpcap_i"
-    5  
-    6  global instruments1 "literacy1870 protestant capital_labor_85"
-    7  
-    8  reg hc ${instruments1} ${vlist_poly5} ${vlist_i_poly5}
+**Logit Weights**
+logit treat age age2 ed black hisp married nodeg re75 re74
+keep if e(sample)==1 //DROP OBS WITH MISSING COVARIATES
 
-  ----- repbox output below this command
-  runid=NA
-  [no extracted log text found; matched run command row]
-  line=5, orgline=8, orgline_start=8, orgline_end=8, runid=NA, is_reg=TRUE, rrd_run_match=FALSE
-  
-  file_path:
-  code/aejpol_5_4_2_Table8.do
-  
-  cmdline:
-  reg hc ${instruments1} ${vlist_poly5} ${vlist_i_poly5}
-  ----- end repbox output
-    9  
-   10  reg invest growth
+predict p
+sum treat
+local pi=r(mean)
+local N1=r(sum)
+local N0=r(N)-`N1'
+gen wlogit=p/(1-p)*(1-`pi')/`pi' if treat==0
 
-  ----- repbox output below this command
-  runid=5
-  [stata output]
-  stata_run_log.logtxt:
-  
-  . reg invest growth
-  
-        Source |       SS           df       MS      Number of obs   =       647
-  -------------+----------------------------------   F(1, 645)       =      4.04
-         Model |  .777200669         1  .777200669   Prob > F        =    0.0449
-      Residual |  124.182348       645  .192530772   R-squared       =    0.0062
-  -------------+----------------------------------   Adj R-squared   =    0.0047
-         Total |  124.959548       646  .193435834   Root MSE        =    .43878
-  
-  ------------------------------------------------------------------------------
-        invest | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
-  -------------+----------------------------------------------------------------
-        growth |   -2.08547   1.037977    -2.01   0.045    -4.123692   -.0472492
-         _cons |   8.312129   .0478613   173.67   0.000     8.218146    8.406112
-  ------------------------------------------------------------------------------
-  
-  . local repbox_reg_rc = _rc
-  
-  . 
-  ----- end repbox output
-   11  
+
+**OB Weights**
+gen one=1
+gen w=.
+gen nD=1-treat
+mata: X=st_data(.,("one", "age", "age2", "ed", "black", "hisp", "married", "nodeg", "re75", "re74"))
+mata: D=st_data(.,"treat")
+mata: nD=st_data(.,"nD")
+mata: w=D'*X*invsym(quadcross(X,nD,X))*X'/`N1'
+mata: w=w':*nD
+mata: st_store(.,"w",w)
+
+
+gen wplot=w*`N1' //renormalize the weights to have mean 1
+scatter wplot wlogit if wlogit!=., scheme(s2mono) xtitle("Logit Weight") ytitle("Oaxaca-Blinder Weight") title("Oaxaca-Blinder vs. Logit Weights")
+
+
+**Check Balancing Properties of Weights**
+sum age  if treat==1
+sum age  if treat==0
+
+sum age [aw=wlogit] if treat==0 //inexact balance
+sum age [iw=w] if treat==0 //exact balance
+
+
+
+
+***TREATMENT EFFECTS***
+
+
+**Naive**
+reg re78 treat, robust
+
+
+**OLS**
+reg re78 treat age age2 ed black hisp married nodeg re75 re74, robust
+
+
+**IPW**
+
+*define short reweighting program
+drop p wlogit
+cap prog drop TOT_logit
+prog def TOT_logit, rclass
+logit treat age age2 ed black hisp married nodeg re75 re74
+predict p
+gen wlogit=p/(1-p) if treat==0
+replace wlogit=1 if treat==1
+reg re78 treat [aw=wlogit]
+drop p wlogit
+return scalar b=_b[treat]
+ereturn clear
+end
+
+*bootstrap
+bs "TOT_logit" b=r(b), reps(1000)
+
+
+**OB**
+reg re78 one age age2 ed black hisp married nodeg re75 re74 if treat==0, nocons robust
+
+mat b=e(b)
+mat V0=e(V)
+
+predict Y0
+gen dif=re78-Y0
+
+sum dif if treat==1
+local TOT=r(mean)
+
+
+sum re78 if treat==1
+local V1=r(Var)/r(N)
+local mu1=r(mean)
+
+mata: V0=st_matrix("V0")
+mata: V1=`V1'
+mata: Vdif=V1+D'*X*V0*X'*D/(`N1'^2)
+mata: st_numscalar("Vdif",Vdif)
+
+di "TOT is `TOT', se is " sqrt(Vdif)
 ```
 
-The log file is:
-
-```
-
-  ___  ____  ____  ____  ____ ®
- /__    /   ____/   /   ____/      17.0
-___/   /   /___/   /   /___/       SE—Standard Edition
-
- Statistics and Data Science       Copyright 1985-2021 StataCorp LLC
-                                   StataCorp
-                                   4905 Lakeway Drive
-                                   College Station, Texas 77845 USA
-                                   800-STATA-PC        https://www.stata.com
-                                   979-696-4600        stata@stata.com
-
-Stata license: Single-user  perpetual
-Serial number: 401706320773
-  Licensed to: Sebastian Kranz
-               Ulm University
-
-Notes:
-      1. Stata is running in batch mode.
-      2. Unicode is supported; see help unicode_advice.
-      3. Maximum number of variables is set to 5,000; see help set_maxvar.
-
-. do "repbox_aejpol_5_4_2_Table8.do", nostop 
-
-. 
-. file open repbox_timer_file using "~/repbox/projects_test/test/repbox/stata/t
-> imer/start.txt", write append
-(file ~/repbox/projects_test/test/repbox/stata/timer/start.txt not found)
-
-. file write repbox_timer_file "1;`c(current_time)';`c(current_date)'"
-
-. file write repbox_timer_file _n
-
-. file close repbox_timer_file
-
-. 
-. if "$repbox_cmd_count" == "" {
-.   set_defaults _all
--> set maxvar 5000
--> set matsize 400
--> set niceness 5
--> set min_memory 0
--> set max_memory .
--> set segmentsize 32m
--> set adosize 1000
--> set more on
--> set rmsg off
--> set dp period
--> (linesize left at current value)
--> (pagesize left at current value)
--> set level 95
--> set clevel 95
--> set showbaselevels
--> set showemptycells
--> set showomitted
--> set fvlabel on
--> set fvwrap 1
--> set fvwrapon word
--> set lstretch
--> set cformat
--> set pformat
--> set sformat
--> set coeftabresults on
--> set logtype smcl
--> set collect_style default
--> set collect_label default
--> set table_style table
--> set etable_style etable
--> set collect_warn on
--> set linegap 1
--> set scrollbufsize 200000
--> set reventries 5000
--> set maxdb 50
--> set graphics off
--> set scheme s2color
--> set printcolor automatic
--> set copycolor automatic
--> set checksum off
--> set timeout1 30
--> set timeout2 180
--> set netdebug off
--> set httpproxy off
--> set httpproxyhost ""
--> set httpproxyport 8080
--> set httpproxyauth off
--> set httpproxyuser ""
--> set httpproxypw ""
--> set trace off
--> set tracedepth 32000
--> set traceexpand on
--> set tracesep on
--> set traceindent on
--> set tracenumber off
--> set tracehilite ""
--> set matastrict off
--> set matalnum off
--> set mataoptimize on
--> set matafavor space
--> set matacache 2000
--> set matalibs ""
--> set matamofirst off
--> set locale_ui default
--> set locale_functions default
--> set type float
--> set maxiter default
--> set searchdefault all
--> (seed left at current value)
--> set varabbrev on
-(preferences reset)
-.   set more off
-.   global repbox_cmd_count = 0
-.   global repbox_root_donum = 1
-.   log using "/home/rstudio/repbox/projects_test/test/repbox/stata/logs/log_1.
-> log", replace name(repbox_log_1)
-(file /home/rstudio/repbox/projects_test/test/repbox/stata/logs/log_1.log not
-    found)
--------------------------------------------------------------------------------
-      name:  repbox_log_1
-       log:  /home/rstudio/repbox/projects_test/test/repbox/stata/logs/log_1.lo
-> g
-  log type:  text
- opened on:  30 Jun 2026, 12:46:44
-.   adopath + "~/ado/plus"
-  [1]  (BASE)      "/usr/local/stata/ado/base/"
-  [2]  (SITE)      "/usr/local/ado/"
-  [3]              "."
-  [4]  (PERSONAL)  "~/ado/personal/"
-  [5]  (PLUS)      "~/ado/plus/"
-  [6]  (OLDPLACE)  "~/ado/"
-  [7]              "~/ado/plus"
-. }
-
-. else {
-.   log using "/home/rstudio/repbox/projects_test/test/repbox/stata/logs/includ
-> e_1.log", replace name(repbox_log_1)
-. }
-
-. 
-. 
-. * PRECOMAND INJECTION START LINE 1
-. 
-. global repbox_cmd_count = $repbox_cmd_count +1
-
-. local repbox_local_cmd_count = $repbox_cmd_count
-
-. local repbox_cmdline = `"use EU_data.dta, clear"'
-
-. 
-. 
-. local repbox_source_path = subinstr("EU_data.dta","\","/",.)
-
-. 
-. repbox_correct_path "file_exists" "`repbox_source_path'" "dta" "/home/rstudio
-> /repbox/projects_test/test/mod" "/home/rstudio/repbox/projects_test/test/mod/
-> code"
-  /home/rstudio/repbox/projects_test/test/mod/code/EU_data.dta
-
-. capture noisily local repbox_corrected_path = "`r(repbox_corrected_path)'"
-
-. file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cm
-> d/precmd_1.csv", write append
-(file ~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv not found)
-
-. file write repbox_cmdlines `"1;1;`repbox_local_cmd_count';$repbox_root_donum;
-> $S_TIME;`c(pwd)';`r(repbox_corrected_path)';`repbox_cmdline'"'
-
-. file write repbox_cmdlines _n
-
-. file close repbox_cmdlines
-
-. 
-. * PRECOMMAND INJECTION END
-. display "#~# INJECT RUNCMD 1 1 `repbox_local_cmd_count'
-#~# INJECT RUNCMD 1 1 1
-
-. capture:  noisily: use "`r(repbox_corrected_path)'", clear
-
-. 
-. display "#~# END INJECT RUNCMD 1 1 `repbox_local_cmd_count'
-#~# END INJECT RUNCMD 1 1 1
-
-. 
-. * USE INJECTION START
-. 
-. 
-. qui {
-
-. 
-. * INJECTION END
-. 
-. 
-. * PRECOMAND INJECTION START LINE 2
-. 
-. global repbox_cmd_count = $repbox_cmd_count +1
-
-. local repbox_local_cmd_count = $repbox_cmd_count
-
-. local repbox_cmdline = `"global vlist_poly5  "gdpcap_5 gdpcap_4 gdpcap_3 gdpc
-> ap_2 gdpcap""'
-
-. 
-. file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cm
-> d/precmd_1.csv", write append
-
-. file write repbox_cmdlines `"1;2;`repbox_local_cmd_count';$repbox_root_donum;
-> $S_TIME;;;`repbox_cmdline'"'
-
-. file write repbox_cmdlines _n
-
-. file close repbox_cmdlines
-
-. 
-. * PRECOMMAND INJECTION END
-. display "#~# INJECT RUNCMD 1 2 `repbox_local_cmd_count'
-#~# INJECT RUNCMD 1 2 2
-
-. capture:  noisily: global vlist_poly5  "gdpcap_5 gdpcap_4 gdpcap_3 gdpcap_2 g
-> dpcap"
-
-. 
-. display "#~# END INJECT RUNCMD 1 2 `repbox_local_cmd_count'
-#~# END INJECT RUNCMD 1 2 2
-
-. 
-. 
-. 
-. qui {
-
-. 
-. 
-. 
-. * PRECOMAND INJECTION START LINE 3
-. 
-. global repbox_cmd_count = $repbox_cmd_count +1
-
-. local repbox_local_cmd_count = $repbox_cmd_count
-
-. local repbox_cmdline = `"global vlist_i_poly5  "gdpcap_i_5 gdpcap_i_4 gdpcap_
-> i_3 gdpcap_i_2 gdpcap_i""'
-
-. 
-. file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cm
-> d/precmd_1.csv", write append
-
-. file write repbox_cmdlines `"1;3;`repbox_local_cmd_count';$repbox_root_donum;
-> $S_TIME;;;`repbox_cmdline'"'
-
-. file write repbox_cmdlines _n
-
-. file close repbox_cmdlines
-
-. 
-. * PRECOMMAND INJECTION END
-. display "#~# INJECT RUNCMD 1 3 `repbox_local_cmd_count'
-#~# INJECT RUNCMD 1 3 3
-
-. capture:  noisily: global vlist_i_poly5  "gdpcap_i_5 gdpcap_i_4 gdpcap_i_3 gd
-> pcap_i_2 gdpcap_i"
-
-. 
-. display "#~# END INJECT RUNCMD 1 3 `repbox_local_cmd_count'
-#~# END INJECT RUNCMD 1 3 3
-
-. 
-. 
-. 
-. qui {
-
-. 
-. 
-. 
-. * PRECOMAND INJECTION START LINE 4
-. 
-. global repbox_cmd_count = $repbox_cmd_count +1
-
-. local repbox_local_cmd_count = $repbox_cmd_count
-
-. local repbox_cmdline = `"global instruments1 "literacy1870 protestant capital
-> _labor_85""'
-
-. 
-. file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cm
-> d/precmd_1.csv", write append
-
-. file write repbox_cmdlines `"1;4;`repbox_local_cmd_count';$repbox_root_donum;
-> $S_TIME;;;`repbox_cmdline'"'
-
-. file write repbox_cmdlines _n
-
-. file close repbox_cmdlines
-
-. 
-. * PRECOMMAND INJECTION END
-. display "#~# INJECT RUNCMD 1 4 `repbox_local_cmd_count'
-#~# INJECT RUNCMD 1 4 4
-
-. capture:  noisily: global instruments1 "literacy1870 protestant capital_labor
-> _85"
-
-. 
-. display "#~# END INJECT RUNCMD 1 4 `repbox_local_cmd_count'
-#~# END INJECT RUNCMD 1 4 4
-
-. 
-. 
-. 
-. qui {
-
-. 
-. 
-. capture:  noisily: reg hc ${instruments1} ${vlist_poly5} ${vlist_i_poly5}
-
-      Source |       SS           df       MS      Number of obs   =       646
--------------+----------------------------------   F(13, 632)      =    175.15
-       Model |  10.4472356        13  .803633507   Prob > F        =    0.0000
-    Residual |  2.89985753       632  .004588382   R-squared       =    0.7827
--------------+----------------------------------   Adj R-squared   =    0.7783
-       Total |  13.3470931       645  .020693168   Root MSE        =    .06774
-
-------------------------------------------------------------------------------
-          hc | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
--------------+----------------------------------------------------------------
-literacy1870 |   .0027148   .0001283    21.15   0.000     .0024628    .0029669
-  protestant |   .1389308   .0124223    11.18   0.000     .1145368    .1633248
-capital_l~85 |   .0190839   .0012517    15.25   0.000      .016626    .0215419
-    gdpcap_5 |   8.94e-23   4.43e-22     0.20   0.840    -7.80e-22    9.59e-22
-    gdpcap_4 |  -7.08e-18   2.48e-17    -0.28   0.776    -5.59e-17    4.17e-17
-    gdpcap_3 |   2.02e-13   4.79e-13     0.42   0.673    -7.39e-13    1.14e-12
-    gdpcap_2 |  -2.48e-09   3.78e-09    -0.66   0.511    -9.91e-09    4.94e-09
-      gdpcap |   .0000127   .0000115     1.10   0.272    -9.97e-06    .0000354
-  gdpcap_i_5 |   9.46e-21   8.25e-20     0.11   0.909    -1.52e-19    1.71e-19
-  gdpcap_i_4 |   2.98e-16   1.71e-15     0.17   0.862    -3.07e-15    3.66e-15
-  gdpcap_i_3 |   3.72e-12   1.25e-11     0.30   0.766    -2.09e-11    2.83e-11
-  gdpcap_i_2 |   2.81e-08   3.52e-08     0.80   0.424    -4.09e-08    9.72e-08
-    gdpcap_i |   .0000512   .0000452     1.13   0.258    -.0000376    .0001399
-       _cons |   .3262364   .0114622    28.46   0.000     .3037277    .3487451
-------------------------------------------------------------------------------
-
-. 
-. * PRECOMAND INJECTION START LINE 6
-. 
-. global repbox_cmd_count = $repbox_cmd_count +1
-
-. local repbox_local_cmd_count = $repbox_cmd_count
-
-. local repbox_cmdline = `"reg invest growth"'
-
-. 
-. file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cm
-> d/precmd_1.csv", write append
-
-. file write repbox_cmdlines `"1;6;`repbox_local_cmd_count';$repbox_root_donum;
-> $S_TIME;;;`repbox_cmdline'"'
-
-. file write repbox_cmdlines _n
-
-. file close repbox_cmdlines
-
-. 
-. * PRECOMMAND INJECTION END
-. display "#~# INJECT RUNCMD 1 6 `repbox_local_cmd_count'
-#~# INJECT RUNCMD 1 6 5
-
-. capture:  noisily: reg invest growth
-
-      Source |       SS           df       MS      Number of obs   =       647
--------------+----------------------------------   F(1, 645)       =      4.04
-       Model |  .777200669         1  .777200669   Prob > F        =    0.0449
-    Residual |  124.182348       645  .192530772   R-squared       =    0.0062
--------------+----------------------------------   Adj R-squared   =    0.0047
-       Total |  124.959548       646  .193435834   Root MSE        =    .43878
-
-------------------------------------------------------------------------------
-      invest | Coefficient  Std. err.      t    P>|t|     [95% conf. interval]
--------------+----------------------------------------------------------------
-      growth |   -2.08547   1.037977    -2.01   0.045    -4.123692   -.0472492
-       _cons |   8.312129   .0478613   173.67   0.000     8.218146    8.406112
-------------------------------------------------------------------------------
-
-. local repbox_reg_rc = _rc
-
-. 
-. display "#~# END INJECT RUNCMD 1 6 `repbox_local_cmd_count'
-#~# END INJECT RUNCMD 1 6 5
-
-. 
-. * REGRESSION INJECTION START
-. if (`repbox_reg_rc' == 0) {
-.   parmest, label saving("~/repbox/projects_test/test/repbox/stata/tsv/1_6_`re
-> pbox_local_cmd_count'.dta", replace)
-(file /home/rstudio/repbox/projects_test/test/repbox/stata/tsv/1_6_5.dta not
-    found)
-file ~/repbox/projects_test/test/repbox/stata/tsv/1_6_5.dta saved
-. 
-. 
-. 
-. qui {
-. 
-.   display "#~# INJECT REG_ERETURN 1 6 `repbox_local_cmd_count'"
-#~# INJECT REG_ERETURN 1 6 5
-.   ereturn list
-
-scalars:
-                  e(N) =  647
-               e(df_m) =  1
-               e(df_r) =  645
-                  e(F) =  4.036760782753117
-                 e(r2) =  .0062196180966463
-               e(rmse) =  .4387832856301592
-                e(mss) =  .777200668867124
-                e(rss) =  124.1823477777166
-               e(r2_a) =  .0046788733185016
-                 e(ll) =  -384.0856635659144
-               e(ll_0) =  -386.1039931665103
-               e(rank) =  2
-
-macros:
-            e(cmdline) : "regress invest growth"
-              e(title) : "Linear regression"
-          e(marginsok) : "XB default"
-                e(vce) : "ols"
-             e(depvar) : "invest"
-                e(cmd) : "regress"
-         e(properties) : "b V"
-            e(predict) : "regres_p"
-              e(model) : "ols"
-          e(estat_cmd) : "regress_estat"
-
-matrices:
-                  e(b) :  1 x 2
-                  e(V) :  2 x 2
-
-functions:
-             e(sample)   
-.   display "#~# END INJECT REG_ERETURN 1 6 `repbox_local_cmd_count'"
-#~# END INJECT REG_ERETURN 1 6 5
-. }
-
-. else {
-.   display "#~# REGRESSION COMMAND FAILED 1 6 `repbox_local_cmd_count' rc=`rep
-> box_reg_rc'"
-. }
-
-. 
-. * REGRESSION INJECTION END
-. 
-. 
-. display "#~# FINISHED DO",
-#~# FINISHED DO 
-
-. capture log close repbox_log_1
-
-. 
-. file open repbox_timer_file using "~/repbox/projects_test/test/repbox/stata/t
-> imer/end.txt", write append
-(file ~/repbox/projects_test/test/repbox/stata/timer/end.txt not found)
-
-. file write repbox_timer_file "1;`c(current_time)';`c(current_date)'"
-
-. file write repbox_timer_file _n
-
-. file close repbox_timer_file
-
-. 
-. 
-end of do-file
-```
-
-and the repbox_...-do file is:
-
-
-```
-
-file open repbox_timer_file using "~/repbox/projects_test/test/repbox/stata/timer/start.txt", write append
-file write repbox_timer_file "1;`c(current_time)';`c(current_date)'"
-file write repbox_timer_file _n
-file close repbox_timer_file
-
-if "$repbox_cmd_count" == "" {
-  set_defaults _all
-  set more off
-  global repbox_cmd_count = 0
-  global repbox_root_donum = 1
-  log using "/home/rstudio/repbox/projects_test/test/repbox/stata/logs/log_1.log", replace name(repbox_log_1)
-  adopath + "~/ado/plus"
-}
-else {
-  log using "/home/rstudio/repbox/projects_test/test/repbox/stata/logs/include_1.log", replace name(repbox_log_1)
-}
-
-
-* PRECOMAND INJECTION START LINE 1
-
-global repbox_cmd_count = $repbox_cmd_count +1
-local repbox_local_cmd_count = $repbox_cmd_count
-local repbox_cmdline = `"use EU_data.dta, clear"'
-
-
-local repbox_source_path = subinstr("EU_data.dta","\","/",.)
-
-repbox_correct_path "file_exists" "`repbox_source_path'" "dta" "/home/rstudio/repbox/projects_test/test/mod" "/home/rstudio/repbox/projects_test/test/mod/code"
-capture noisily local repbox_corrected_path = "`r(repbox_corrected_path)'"
-file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv", write append
-file write repbox_cmdlines `"1;1;`repbox_local_cmd_count';$repbox_root_donum;$S_TIME;`c(pwd)';`r(repbox_corrected_path)';`repbox_cmdline'"'
-file write repbox_cmdlines _n
-file close repbox_cmdlines
-
-* PRECOMMAND INJECTION END
-display "#~# INJECT RUNCMD 1 1 `repbox_local_cmd_count'
-capture:  noisily: use "`r(repbox_corrected_path)'", clear
-
-display "#~# END INJECT RUNCMD 1 1 `repbox_local_cmd_count'
-
-* USE INJECTION START
-
-
-qui {
-file open repbox_cmd_file using "~/repbox/projects_test/test/repbox/stata/cmd/postcmd_1.csv", write append
-file write repbox_cmd_file `"1;1;`repbox_local_cmd_count';$S_TIME;`=_rc';;"'
-capture xtset
-file write repbox_cmd_file `"`r(timevar)';`r(panelvar)';`r(tdelta)'"'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-}
-
-* INJECTION END
-
-
-* PRECOMAND INJECTION START LINE 2
-
-global repbox_cmd_count = $repbox_cmd_count +1
-local repbox_local_cmd_count = $repbox_cmd_count
-local repbox_cmdline = `"global vlist_poly5  "gdpcap_5 gdpcap_4 gdpcap_3 gdpcap_2 gdpcap""'
-
-file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv", write append
-file write repbox_cmdlines `"1;2;`repbox_local_cmd_count';$repbox_root_donum;$S_TIME;;;`repbox_cmdline'"'
-file write repbox_cmdlines _n
-file close repbox_cmdlines
-
-* PRECOMMAND INJECTION END
-display "#~# INJECT RUNCMD 1 2 `repbox_local_cmd_count'
-capture:  noisily: global vlist_poly5  "gdpcap_5 gdpcap_4 gdpcap_3 gdpcap_2 gdpcap"
-
-display "#~# END INJECT RUNCMD 1 2 `repbox_local_cmd_count'
-
-
-
-qui {
-file open repbox_cmd_file using "~/repbox/projects_test/test/repbox/stata/cmd/postcmd_1.csv", write append
-file write repbox_cmd_file `"1;2;`repbox_local_cmd_count';$S_TIME;`=_rc';;"'
-file write repbox_cmd_file `";;"'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-}
-
-
-
-* PRECOMAND INJECTION START LINE 3
-
-global repbox_cmd_count = $repbox_cmd_count +1
-local repbox_local_cmd_count = $repbox_cmd_count
-local repbox_cmdline = `"global vlist_i_poly5  "gdpcap_i_5 gdpcap_i_4 gdpcap_i_3 gdpcap_i_2 gdpcap_i""'
-
-file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv", write append
-file write repbox_cmdlines `"1;3;`repbox_local_cmd_count';$repbox_root_donum;$S_TIME;;;`repbox_cmdline'"'
-file write repbox_cmdlines _n
-file close repbox_cmdlines
-
-* PRECOMMAND INJECTION END
-display "#~# INJECT RUNCMD 1 3 `repbox_local_cmd_count'
-capture:  noisily: global vlist_i_poly5  "gdpcap_i_5 gdpcap_i_4 gdpcap_i_3 gdpcap_i_2 gdpcap_i"
-
-display "#~# END INJECT RUNCMD 1 3 `repbox_local_cmd_count'
-
-
-
-qui {
-file open repbox_cmd_file using "~/repbox/projects_test/test/repbox/stata/cmd/postcmd_1.csv", write append
-file write repbox_cmd_file `"1;3;`repbox_local_cmd_count';$S_TIME;`=_rc';;"'
-file write repbox_cmd_file `";;"'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-}
-
-
-
-* PRECOMAND INJECTION START LINE 4
-
-global repbox_cmd_count = $repbox_cmd_count +1
-local repbox_local_cmd_count = $repbox_cmd_count
-local repbox_cmdline = `"global instruments1 "literacy1870 protestant capital_labor_85""'
-
-file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv", write append
-file write repbox_cmdlines `"1;4;`repbox_local_cmd_count';$repbox_root_donum;$S_TIME;;;`repbox_cmdline'"'
-file write repbox_cmdlines _n
-file close repbox_cmdlines
-
-* PRECOMMAND INJECTION END
-display "#~# INJECT RUNCMD 1 4 `repbox_local_cmd_count'
-capture:  noisily: global instruments1 "literacy1870 protestant capital_labor_85"
-
-display "#~# END INJECT RUNCMD 1 4 `repbox_local_cmd_count'
-
-
-
-qui {
-file open repbox_cmd_file using "~/repbox/projects_test/test/repbox/stata/cmd/postcmd_1.csv", write append
-file write repbox_cmd_file `"1;4;`repbox_local_cmd_count';$S_TIME;`=_rc';;"'
-file write repbox_cmd_file `";;"'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-}
-
-
-capture:  noisily: reg hc ${instruments1} ${vlist_poly5} ${vlist_i_poly5}
-
-* PRECOMAND INJECTION START LINE 6
-
-global repbox_cmd_count = $repbox_cmd_count +1
-local repbox_local_cmd_count = $repbox_cmd_count
-local repbox_cmdline = `"reg invest growth"'
-
-file open repbox_cmdlines using "~/repbox/projects_test/test//repbox/stata/cmd/precmd_1.csv", write append
-file write repbox_cmdlines `"1;6;`repbox_local_cmd_count';$repbox_root_donum;$S_TIME;;;`repbox_cmdline'"'
-file write repbox_cmdlines _n
-file close repbox_cmdlines
-
-* PRECOMMAND INJECTION END
-display "#~# INJECT RUNCMD 1 6 `repbox_local_cmd_count'
-capture:  noisily: reg invest growth
-local repbox_reg_rc = _rc
-
-display "#~# END INJECT RUNCMD 1 6 `repbox_local_cmd_count'
-
-* REGRESSION INJECTION START
-if (`repbox_reg_rc' == 0) {
-  parmest, label saving("~/repbox/projects_test/test/repbox/stata/tsv/1_6_`repbox_local_cmd_count'.dta", replace)
-
-
-
-qui {
-file open repbox_cmd_file using "~/repbox/projects_test/test/repbox/stata/cmd/postcmd_1.csv", write append
-file write repbox_cmd_file `"1;6;`repbox_local_cmd_count';$S_TIME;`=_rc';;"'
-capture xtset
-file write repbox_cmd_file `"`r(timevar)';`r(panelvar)';`r(tdelta)'"'
-file write repbox_cmd_file _n
-file close repbox_cmd_file
-}
-
-  display "#~# INJECT REG_ERETURN 1 6 `repbox_local_cmd_count'"
-  ereturn list
-  display "#~# END INJECT REG_ERETURN 1 6 `repbox_local_cmd_count'"
-}
-else {
-  display "#~# REGRESSION COMMAND FAILED 1 6 `repbox_local_cmd_count' rc=`repbox_reg_rc'"
-}
-
-* REGRESSION INJECTION END
-
-
-display "#~# FINISHED DO",
-capture log close repbox_log_1
-
-file open repbox_timer_file using "~/repbox/projects_test/test/repbox/stata/timer/end.txt", write append
-file write repbox_timer_file "1;`c(current_time)';`c(current_date)'"
-file write repbox_timer_file _n
-file close repbox_timer_file
-
-```
-
-The repbox
-
-Can you detect the problem, describe it and fix it?
 
