@@ -135,6 +135,10 @@ repbox_save_stata_run_parcels = function(project_dir, parcels=list(), repbox_res
 
   repdb_save_parcels(parcels[c("stata_run_cmd","stata_run_log","stata_run_info", "xtvar")], file.path(project_dir, "repdb") )
   parcels = make_stata_reg_run_cmd_parcel(project_dir, parcels=parcels)
+
+  # Generate the parcel assigning progrunid
+  parcels = make_stata_prog_run_parcel(project_dir, parcels=parcels)
+
   invisible(parcels)
 }
 
@@ -223,3 +227,94 @@ set_run_df_cmd_type = function(run_df) {
   run_df
 }
 
+
+#' Create a parcel that maps runid to progrunid for commands inside custom Stata programs
+make_stata_prog_run_parcel = function(project_dir, parcels = list(), overwrite = FALSE) {
+  restore.point("make_stata_prog_run_parcel")
+
+  if (!overwrite && repboxDB::repdb_has_parcel(project_dir, "stata_prog_run")) {
+    return(parcels)
+  }
+
+  parcels = repboxDB::repdb_load_parcels(project_dir, c("stata_run_cmd", "stata_cmd","stata_file"), parcels = parcels)
+  run_df = parcels$stata_run_cmd
+  stata_cmd = parcels$stata_cmd
+
+  if (is.null(run_df) || nrow(run_df) == 0 || is.null(stata_cmd) || nrow(stata_cmd) == 0) {
+    parcels$stata_prog_run = tibble::tibble(runid = integer(0), progid = character(0), progrunid = integer(0))
+    repboxDB::repdb_save_parcels(parcels["stata_prog_run"], file.path(project_dir, "repdb"))
+    return(parcels)
+  }
+
+  # 1. Vectorized progid assignment based on static stata_cmd
+  is_prog_start = (stata_cmd$cmd %in% c("program", "prog", "pr", "progr")) &
+                  (!repboxUtils::is.true(stata_cmd$cmd2 %in% c("drop", "dir", "list")))
+
+  stata_cmd = left_join(stata_cmd, parcels$stata_file %>% select(file_path, script_num=script_num), by="file_path")
+
+
+  stata_cmd = stata_cmd %>%
+    dplyr::group_by(script_num) %>%
+    dplyr::mutate(
+      prog_num = cumsum(is_prog_start),
+      progid = ifelse(in_program, paste0(script_num, "_", prog_num), NA_character_)
+    ) %>%
+    dplyr::ungroup()
+
+  # 2. Join progid into the chronological run_df
+  run_df = run_df %>%
+    dplyr::left_join(stata_cmd %>% dplyr::select(file_path, line, progid), by = c("file_path", "line")) %>%
+    dplyr::arrange(runid)
+
+  prog_ids = run_df$progid
+  prog_ids[is.na(prog_ids)] = ""
+
+  # 3. Fast RLE compression for the Call Stack
+  # This compresses potentially 100,000 commands into a few hundred blocks
+  rle_prog = rle(prog_ids)
+  blocks = rle_prog$values
+  lens = rle_prog$lengths
+
+  progrunid_block = rep(NA_integer_, length(blocks))
+  stack = character(0)
+  stack_id = integer(0)
+  counter = 0L
+
+  # O(N_blocks) loop. Extremely fast because N_blocks is tiny.
+  for (i in seq_along(blocks)) {
+    p = blocks[i]
+    if (p == "") {
+      # Outside any program -> clear stack
+      stack = character(0)
+      stack_id = integer(0)
+    } else {
+      idx = match(p, stack)
+      if (!is.na(idx)) {
+        # Resuming a previous call in the stack (popping subroutines)
+        stack = stack[1:idx]
+        stack_id = stack_id[1:idx]
+        progrunid_block[i] = stack_id[idx]
+      } else {
+        # Entering a new call -> push to stack
+        counter = counter + 1L
+        stack = c(stack, p)
+        stack_id = c(stack_id, counter)
+        progrunid_block[i] = counter
+      }
+    }
+  }
+
+  # 4. Expand block progrunids back to individual runids
+  progrunid_vec = rep(progrunid_block, lens)
+
+  stata_prog_run = tibble::tibble(
+    runid = run_df$runid,
+    progid = run_df$progid,
+    progrunid = progrunid_vec
+  ) %>% dplyr::filter(!is.na(progid))
+
+  parcels$stata_prog_run = stata_prog_run
+  repboxDB::repdb_save_parcels(parcels["stata_prog_run"], file.path(project_dir, "repdb"))
+
+  invisible(parcels)
+}

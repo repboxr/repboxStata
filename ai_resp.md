@@ -1,180 +1,267 @@
-Yes, we can absolutely do this! In the original Stata reproduction, the `project_dir` is readily available during the execution phase. 
+This is a classic Stata scoping architecture challenge. When a user issues a `preserve` inside a program, Stata effectively ties that memory snapshot to the program's namespace. Upon exiting the program, Stata silently executes a garbage-collection layer that implicitly restores the top-level snapshot belonging to that program. 
 
-Currently, a summary timeout problem is raised at the very end of extraction (`adapt.run.df.for.timeout`), but it didn't pass `project_dir` correctly and lacked specific file context. 
+Option B is highly optimal here. We can utilize a stack-based algorithm that mimics Stata's memory garbage collection. By doing so, we can detect program boundaries using the `stata_prog_run` parcel (which tracks `progrunid` reliably across all scopes via RLE), identify which program "owns" which `preserve`, and synthesize an `is_implicit_restore` flag strictly on the first command immediately following the program's termination. 
 
-To improve this, I will:
-1. Move the `repbox_problem` logging directly into `run.do()` and `stata.inject.and.run()` so we can log the exact do-file that timed out as soon as it happens.
-2. Use specific types: `"stata_reproduction_timeout"` (per-file limit) and `"stata_reproduction_global_timeout"` (overall project limit).
-3. Include the exact timeout duration and the do-file name in the messages.
-4. Remove the old, less-informative summary `repbox_problem` from `adapt.run.df.for.timeout`.
-5. Update `repbox_store_project_problems` in `repboxRun` to map the legacy `"timeout"` type to `"stata_reproduction_timeout"`.
+This enables your data-path walker (`find_data_run_path`) to jump backwards in time seamlessly without injecting artificial rows that corrupt source line alignments. Because it uses vectorized lookup and a minimal pre-allocated R stack restricted only to `event_rows`, it will be near-instantaneous for the 99% of do-files that don't trigger this pattern.
 
-Here are the code modifications:
+Here are the required modifications to `drf_paths.R`:
 
-!MODIFICATION run.do repboxStata/R/repboxStata.R
+!MODIFICATION drf_compute_preserve_rows repboxDRF/R/drf_paths.R
 scope = "function"
-file = "/home/rstudio/repbox/repboxStata/R/repboxStata.R"
-function_name = "run.do"
-description = "Log timeout specifically for the do file during reproduction run, using repbox_problem with the duration."
+file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
+insert_before_fun = "add_load_blocks_to_run_df"
+description = "Introduce a highly efficient stack-based logic to resolve both explicit and implicit Stata restores tied to their program scopes."
 ---
 ```r
-run.do = function(do, timeout=opts$timeout, verbose=TRUE, opts=rbs.opts()) {
-  restore.point("run.do")
-  #stop()
-  project_dir = do$project_dir
-  org.file = do$file
-  do.dir = dirname(org.file)
-  org.base = basename(org.file)
-  new.base = paste0("repbox_", org.base)
-  new.file = file.path(do.dir, new.base)
-
-  # Create repbox dirs and remove files that will be overwritten
-  repbox.dir = file.path(project_dir,"repbox/stata")
-  if (!dir.exists(repbox.dir)) dir.create(repbox.dir)
-  tsv.dir = file.path(repbox.dir,"tsv")
-  create.dir(tsv.dir)
-  create.dir(file.path(repbox.dir,"dta"))
-
-  cmd.dir = file.path(repbox.dir,"cmd")
-  if (!dir.exists(cmd.dir)) dir.create(cmd.dir)
-  cmd.file = file.path(cmd.dir, paste0("precmd_",do$donum,".csv"))
-  if (file.exists(cmd.file)) file.remove(cmd.file)
-  cmd.file = file.path(cmd.dir, paste0("postcmd_",do$donum,".csv"))
-  if (file.exists(cmd.file)) file.remove(cmd.file)
-
-  res = run_stata_do(new.file,timeout=timeout, verbose=verbose)
-
-  do$timeout = res$timeout
-  do$runtime = res$runtime
-
-  if (isTRUE(do$timeout)) {
-    msg = paste0("Timeout (duration: ", timeout, " sec.) during Stata reproduction of do file: ", do$dofile, ".")
-    repboxUtils::repbox_problem(msg = msg, type = "stata_reproduction_timeout", project_dir = project_dir, fail_action = "msg")
+drf_compute_preserve_rows = function(run_df, drf = NULL) {
+  restore.point("drf_compute_preserve_rows")
+  
+  run_df$is_implicit_restore = rep(FALSE, NROW(run_df))
+  run_df$preserve_row = rep(NA_integer_, NROW(run_df))
+  
+  # Fast exit for 99% of cases: No preserves at all
+  if (!any(run_df$cmd == "preserve", na.rm = TRUE)) {
+    return(run_df)
   }
-
-  return(invisible(do))
-}
-```
-!END_MODIFICATION run.do repboxStata/R/repboxStata.R
-
-
-!MODIFICATION stata.inject.and.run repboxStata/R/repboxStata.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxStata/R/repboxStata.R"
-function_name = "stata.inject.and.run"
-description = "Log global project timeout specifically during execution with repbox_problem and exact duration."
----
-```r
-stata.inject.and.run = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts(), start.time = NULL) {
-  restore.point("stata.inject.and.run")
-  #stop()
-  # Check if global project timeout is reached
-  if (!is.null(start.time)) {
-
-    runsec = as.numeric(Sys.time())-as.numeric(start.time)
-    if (isTRUE(runsec > opts$all.do.timeout)) {
-      do$timeout = TRUE
-      do$runtime = NA
-      
-      msg = paste0("Global timeout (duration: ", opts$all.do.timeout, " sec.) reached. Skipping do file: ", do$dofile, ".")
-      repboxUtils::repbox_problem(msg = msg, type = "stata_reproduction_global_timeout", project_dir = do$project_dir, fail_action = "msg")
-      
-      return(do)
-    }
+  
+  # Load program execution scope tracking
+  has_prog = FALSE
+  if (!is.null(drf) && !is.null(drf$project_dir)) {
+    parcels = repboxDB::repdb_load_parcels(drf$project_dir, "stata_prog_run", drf$parcels)
+    has_prog = !is.null(parcels$stata_prog_run) && nrow(parcels$stata_prog_run) > 0
   }
-
-  res = inject.do(do, reg.cmds=reg.cmds, save.changed.data=save.changed.data)
-  do = res$do
-  do = run.do(do)
-  do
-}
-```
-!END_MODIFICATION stata.inject.and.run repboxStata/R/repboxStata.R
-
-
-!MODIFICATION adapt.run.df.for.timeout repboxStata/R/extract.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxStata/R/extract.R"
-function_name = "adapt.run.df.for.timeout"
-description = "Remove the generic/unscoped repbox_problem call since timeouts are now recorded precisely on execution in run.do."
----
-```r
-# If there is a timeout: we will change the error message of the
-# last command to "Timeout when running do file"
-adapt.run.df.for.timeout = function(run.df, dotab, project_dir, opts) {
-  restore.point("adapt.run.df.for.timeout")
-  donums = dotab$donum[is.true(dotab$timeout)]
-  # No timeout
-  if (length(donums)==0) return(run.df)
-  rows = which(run.df$donum %in% donums & is.na(run.df$runerrcode))
-  # Only set last row of each do file as timeout run
-  rows = rows[!duplicated(run.df$donum[rows], fromLast=TRUE)]
-
-  run.df$runerrcode[rows] = -1L
-  run.df$runerrmsg[rows] = paste0("Timeout after ", opts$timeout, " sec. when running do file")
-  run.df
-}
-```
-!END_MODIFICATION adapt.run.df.for.timeout repboxStata/R/extract.R
-
-
-!MODIFICATION repbox_store_project_problems repboxRun/R/expost_info.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxRun/R/expost_info.R"
-function_name = "repbox_store_project_problems"
-description = "Update manually synthesized timeout problems to use the new stata_reproduction_timeout type."
----
-```r
-repbox_store_project_problems = function(project_dir, parcels=list()) {
-  restore.point("repbox_store_project_problems")
-
-  prob_li = vector("list",0)
-
-  parcels = repdb_load_parcels(project_dir, "stata_do_run_info",parcels = parcels)
-  info = parcels$stata_do_run_info$stata_do_run_info
-  if (NROW(info)>0) {
-    num = sum(info$timeout, na.rm = TRUE)
-    if (num > 0) {
-      prob_li[[length(prob_li)+1]] = list(type="stata_reproduction_timeout", msg = paste0(num, " do files had a timeout."))
+  
+  progrunid = rep(NA_integer_, NROW(run_df))
+  if (has_prog) {
+    idx = match(run_df$runid, parcels$stata_prog_run$runid)
+    valid = !is.na(idx)
+    progrunid[valid] = parcels$stata_prog_run$progrunid[idx[valid]]
+  }
+  
+  # Detect program exit boundaries
+  prog_shifted = c(NA_integer_, progrunid[-length(progrunid)])
+  is_prog_exit = !is.na(prog_shifted) & (is.na(progrunid) | progrunid != prog_shifted)
+  
+  # Filter to actionable event rows to keep the R-loop minimal and extremely fast
+  is_event = run_df$cmd %in% c("preserve", "restore")
+  event_rows = which(is_event | is_prog_exit)
+  
+  if (length(event_rows) == 0) return(run_df)
+  
+  cmds = run_df$cmd[event_rows]
+  progs = progrunid[event_rows]
+  exits = is_prog_exit[event_rows]
+  prev_progs = prog_shifted[event_rows]
+  
+  # Fast pre-allocated arrays mimicking Stata's state frame stack
+  stack_row = integer(1000)
+  stack_prog = integer(1000)
+  stack_idx = 0L
+  
+  for (i in seq_along(event_rows)) {
+    curr_row = event_rows[i]
+    
+    # 1. Process Program Exits (Implicit Restores)
+    if (exits[i]) {
+      # Pop all preserves exclusively belonging to the exiting program's scope
+      while (stack_idx > 0 && !is.na(stack_prog[stack_idx]) && stack_prog[stack_idx] == prev_progs[i]) {
+        run_df$is_implicit_restore[curr_row] = TRUE
+        popped_row = stack_row[stack_idx]
+        
+        # If multiple restores happen at the same line (e.g. nested scope collapse), 
+        # jumping back to the lowest (earliest) preserve dominates memory state.
+        if (is.na(run_df$preserve_row[curr_row]) || popped_row < run_df$preserve_row[curr_row]) {
+          run_df$preserve_row[curr_row] = popped_row
+        }
+        stack_idx = stack_idx - 1L
+      }
     }
-    num = sum(info$num_load_data_err, na.rm=TRUE)
-    if (num > 0) {
-      prob_li[[length(prob_li)+1]] = list(type="missing_data", msg = paste0(num, " data load commands did not work."))
+    
+    # 2. Process Explicit Restores
+    if (cmds[i] == "restore") {
+      if (stack_idx > 0) {
+        popped_row = stack_row[stack_idx]
+        if (is.na(run_df$preserve_row[curr_row]) || popped_row < run_df$preserve_row[curr_row]) {
+          run_df$preserve_row[curr_row] = popped_row
+        }
+        stack_idx = stack_idx - 1L
+      }
     }
-    num = sum(info$has_parse_err, na.rm=TRUE)
-    if (num > 0) {
-      prob_li[[length(prob_li)+1]] = list(type="parse_error", msg = paste0(num, " do files had a parse errors."))
+    
+    # 3. Process Preserves (Push to stack)
+    if (cmds[i] == "preserve") {
+      stack_idx = stack_idx + 1L
+      # Expand stack safely if strictly necessary
+      if (stack_idx > length(stack_row)) {
+        length(stack_row) = length(stack_row) * 2
+        length(stack_prog) = length(stack_prog) * 2
+      }
+      stack_row[stack_idx] = curr_row
+      stack_prog[stack_idx] = progs[i]
     }
   }
+  
+  return(run_df)
+}
+```
+!END_MODIFICATION drf_compute_preserve_rows repboxDRF/R/drf_paths.R
 
+!MODIFICATION drf_make_paths repboxDRF/R/drf_paths.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
+function_name = "drf_make_paths"
+description = "Pass drf context down to find_one_root_data_paths to allow it to utilize drf packages."
+---
+```r
+drf_make_paths = function(drf) {
+  restore.point("drf_make_paths")
+  run_df = drf$run_df; project_dir = drf$project_dir
+  pids = drf$pids
+  if (is.null(pids)) {
+    stop("Please specify drf$pids, the analyis runid of run_df.")
+  }
 
-  problem_dir = file.path(project_dir,"problems")
-  repdb_dir = file.path(project_dir,"repdb")
-  prob_files = list.files(problem_dir,full.names = TRUE)
+  type_vec = drf_stata_cmd_types_vec()
 
-  prob_li = c(
-    prob_li,
-    lapply(prob_files, readRDS)
+  run_df = run_df %>%
+    mutate(
+      cmd_type = type_vec[cmd]
+    )
+
+  dep_df = drf$dep_df
+
+  run_df = run_df %>%
+  mutate(
+    is_mod =  cmd %in% stata2r::stata_data_manip_cmds |
+      runid %in% dep_df$source_runid |
+      cmd_type %in% c("mod","load")
   )
-  if (length(prob_li)==0) {
-    problem_rds = file.path(repdb_dir,"problem.Rds")
-    if (file.exists(problem_rds)) {
-      file.remove(problem_rds)
-    }
-    return(parcels)
+  run_df$is_mod[run_df$cmd=="scalar"] = FALSE
+
+  # Split run_df by root_file_path and compute path_df
+  # Then merge path_df again for all run_df
+
+  # FIX: Prevent split() from dropping NA roots.
+  # Fall back to file_path to isolate lost executions correctly.
+
+  if (anyNA(run_df$root_file_path)) {
+    repbox_problem(msg="Some run_df$root_file_path were NA set to file_path to generate drf$path_df. Might be problematic if do files cannot be run independently from each other.",type="drf_root_file_path_NA", fail_action="msg", project_dir=drf$project_dir, runid=NA)
+    run_df = run_df %>%
+      mutate(root_file_path = ifelse(is.na(root_file_path), file_path, root_file_path))
+
   }
 
-  prob_df = lapply(prob_li, function(x) {
-    as.data.frame(x[1:2])
-  }) %>%
-    bind_rows()
-  names(prob_df) = c("problem_type", "problem_descr")
+  srun_li = split(run_df,run_df$root_file_path)
+  path_li = lapply(srun_li, find_one_root_data_paths, pids=pids, drf=drf)
+  path_df = bind_rows(path_li)
 
-  prob_df$artid = basename(project_dir)
-
-  parcels$problem = prob_df
-  repdb_save_parcels(parcels["problem"],dir = repdb_dir)
-  parcels
+  if (NROW(path_df)==0) {
+    cat("\nNo regression command found.")
+    return(NULL)
+  }
+  return(path_df)
 }
 ```
-!END_MODIFICATION repbox_store_project_problems repboxRun/R/expost_info.R
+!END_MODIFICATION drf_make_paths repboxDRF/R/drf_paths.R
+
+!MODIFICATION find_one_root_data_paths repboxDRF/R/drf_paths.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
+function_name = "find_one_root_data_paths"
+description = "Pass drf directly into add_load_blocks_to_run_df to allow access to stata_prog_run data."
+---
+```r
+find_one_root_data_paths = function(srun_df, pids, drf = NULL) {
+  restore.point("find_one_root_data_paths")
+
+  srun_df$.ROW = seq_len(NROW(srun_df))
+  srun_df = add_load_blocks_to_run_df(srun_df, drf)
+
+  # --- OPTIMIZATION: Compute data modification flags globally ONCE ---
+  # We check the entire run block to resolve dependencies accurately and quickly
+  # rather than doing this inside the loop for every path
+
+  #stata_code = gsub("\n", " ", srun_df$cmdline, fixed = TRUE)
+  #cmd_df = stata2r::s2r_check_mod(stata_code)
+  #srun_df$is_mod = cmd_df$is_mod
+  # -------------------------------------------------------------------
+
+  spid_rows = match(pids, srun_df$runid)
+  spid_rows = spid_rows[!is.na(spid_rows)]
+
+  path_df = bind_rows(lapply(spid_rows, find_data_run_path, srun_df = srun_df, all_pids = pids))
+
+  if (NROW(path_df)==0) return(NULL)
+  path_df
+}
+```
+!END_MODIFICATION find_one_root_data_paths repboxDRF/R/drf_paths.R
+
+
+!MODIFICATION add_load_blocks_to_run_df repboxDRF/R/drf_paths.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
+function_name = "add_load_blocks_to_run_df"
+description = "Rework load blocks generation utilizing the new generalized preserve logic."
+---
+```r
+add_load_blocks_to_run_df = function(run_df, drf = NULL) {
+  restore.point("add_load_blocks_to_run_df")
+  
+  # Delegate completely tracking explicit AND implicit preserves and restores
+  run_df = drf_compute_preserve_rows(run_df, drf)
+  
+  cmd_types = drf_stata_cmd_types()
+  load_cmds = cmd_types$load
+
+  is_break = run_df$cmd %in% c(load_cmds, "restore") | run_df$is_implicit_restore
+  run_df$load_block = cumsum(is_break)
+
+  run_df
+}
+```
+!END_MODIFICATION add_load_blocks_to_run_df repboxDRF/R/drf_paths.R
+
+
+!MODIFICATION find_data_run_path repboxDRF/R/drf_paths.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
+function_name = "find_data_run_path"
+description = "Enable backwards-tracing capability natively for implicit restores."
+---
+```r
+find_data_run_path = function(pid_row, srun_df, all_pids=NULL) {
+  restore.point("find_data_run_path")
+
+  # All runid in same load block until pid
+  path = which(srun_df$load_block == srun_df$load_block[pid_row] & srun_df$.ROW <= pid_row)
+
+  # If we start with a restore command or an implicit restore, jump to previous preserve
+  # and then add all rows with the same load_block
+  while (TRUE) {
+    first_row = path[1]
+    if (srun_df$cmd[first_row] == "restore" || isTRUE(srun_df$is_implicit_restore[first_row])) {
+      pr_row = srun_df$preserve_row[first_row]
+      if (!is.na(pr_row)) {
+        new_path = which(srun_df$load_block == srun_df$load_block[pr_row] & srun_df$.ROW < pr_row)
+        path = c(new_path, path[-1])
+        next
+      }
+    }
+    break
+  }
+
+  # Adapt path: Utilize the globally computed is_mod flag from srun_df
+  cmd_types = drf_stata_cmd_types()
+  allow = c(cmd_types$scalar, cmd_types$xtset)
+
+  keep = seq_along(path) %in% c(1, length(path)) |
+    ((srun_df$is_mod[path] | srun_df$cmd[path] %in% allow) & srun_df$ok[path]) |
+    srun_df$runid[path] %in% all_pids
+
+  path = path[keep]
+
+  return( tibble(pid=srun_df$runid[pid_row], runid=srun_df$runid[path]))
+}
+```
+!END_MODIFICATION find_data_run_path repboxDRF/R/drf_paths.R
