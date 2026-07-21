@@ -13,22 +13,43 @@ stata_cmds_postreg = function() {
 }
 
 stata_cmds_quasireg = function() {
-  c("rd", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hausman","stcox", "xtivreg","ivreghdfe","condivreg","xtpoisson","newey2","hetprob","reg2hdfespatial")
+  c("rd", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hausman","newey2","hetprob","reg2hdfespatial","gmm",
+
+  "reg3","sem","gsem" # cannot parse syntax -> treat as quasireg
+  )
 }
 
 stata_cmds_reg = function() {
+
+
   get.regcmds()
 }
 
 
 get.regcmds = function() {
-  restore.point("get.regcmds")
-  reg.cmds = getOption("repbox.reg.cmds")
-  if (!is.null(reg.cmds)) return(reg.cmds)
-  file = system.file("misc/regression_cmds.txt", package="repboxStata")
-  reg.cmds = readLines(file,warn = FALSE) %>% trimws()
-  options(repbox.reg.cmds = reg.cmds)
-  return(reg.cmds)
+  return(
+      c("reg", "areg", "ivregress", "ivreg", "ivreg2", "sureg", "reghdfe", "reg2hdfe", "xtreg", "xtivreg2", "xtivreg", "xtlogit", "xtprobit", "xttobit", "regress", "cgmreg", "intreg", "boxcox", "qreg", "truncreg", "cnsreg", "eivreg", "nl", "rreg", "bsqreg", "sqreg", "iqreg", "vwls", "glm", "cloglog", "logit", "logistic", "blogit", "glogit", "binreg", "scobit", "probit", "dprobit", "ivprobit", "bprobit", "gprobit", "hetprobit", "heckprobit", "biprobit", "tobit", "ivtobit", "clogit", "oprobit", "ologit", "heckoprobit", "rologit", "asroprobit", "slogit", "mlogit", "asclogit", "nlogit", "asmprobit", "mprobit", "poisson", "ivpoisson", "nbreg", "gnbreg", "tpoisson", "tnbreg", "zip", "zinb", "exlogistic", "expoisson", "arch", "frontier", "heckman", "etregress", "etpoisson", "arima", "arfima", "newey", "var", "svar", "vec", "dfactor", "ppmlhdfe", "svyreg", "ppml", "stcox",
+         "ivreghdfe","condivreg","xtpoisson",
+
+          "givregress",
+  "ivfprobit",
+  "ivqregress",
+  "spivregress"
+
+
+        )
+
+
+
+  )
+  #restore.point("get.regcmds")
+  #reg.cmds = getOption("repbox.reg.cmds")
+  #if (!is.null(reg.cmds)) return(reg.cmds)
+  #file = system.file("misc/regression_cmds.txt", package="repboxStata")
+  #reg.cmds = readLines(file,warn = FALSE) %>% trimws()
+  #cat(paste0('"',reg.cmds,'"', collapse=", "))
+  #options(repbox.reg.cmds = reg.cmds)
+  #return(reg.cmds)
 }
 
 repbox_always_cache_cmd = function() {

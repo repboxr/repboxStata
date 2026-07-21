@@ -420,6 +420,55 @@ repa.set.delimit = function(s) {
   return(s)
 }
 
+# Repair commands that are no longer supported in newer Stata versions
+# For example, from Stata 15 onwards, tobit no longer supports standalone robust or cluster()
+tab.repair.stata.version = function(tab) {
+  restore.point("tab.repair.stata.version")
+
+  # Currently only target tobit, but easily extensible
+  check_cmds = c("tobit")
+
+  rows = which(tab$cmd %in% check_cmds)
+  if (length(rows) == 0) return(tab)
+
+  # Strip valid vce(...) options from the options string to avoid false positives
+  opts_clean = stringi::stri_replace_all_regex(tab$opts[rows], "\\bvce\\s*\\([^)]+\\)", "")
+
+  # Detect standalone robust or cluster()
+  # robust can be abbreviated: rob, robu, robus, robust
+  # cluster can be abbreviated: cl, clu, clus, clust, cluste, cluster
+  has_old_opt = stringi::stri_detect_regex(
+    opts_clean,
+    "\\b(rob|robu|robus|robust)\\b|\\b(cl|clu|clus|clust|cluste|cluster)\\s*\\("
+  )
+  has_old_opt[is.na(has_old_opt)] = FALSE
+
+  update_rows = rows[has_old_opt]
+
+  if (length(update_rows) > 0) {
+    # Skip if there's already a version prefix
+    already_version = stringi::stri_detect_regex(tab$colon1[update_rows], "(?i)^version\\s+[0-9.]+")
+    already_version[is.na(already_version)] = FALSE
+    update_rows = update_rows[!already_version]
+  }
+
+  if (length(update_rows) > 0) {
+    # Prefix with version 14:
+    tab$txt[update_rows] = paste0("version 14: ", tab$txt[update_rows])
+
+    # Also update colon1 to maintain parsing consistency
+    tab$colon1[update_rows] = ifelse(
+      is.na(tab$colon1[update_rows]) | tab$colon1[update_rows] == "",
+      "version 14",
+      paste0("version 14: ", tab$colon1[update_rows])
+    )
+  }
+
+  tab
+}
+
+
+
 repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   restore.point("repa.do.table")
 
@@ -667,6 +716,7 @@ repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
   tab = tab.repair.input.cmds(tab)
   tab = tab.replace.texdoc.do(tab)
   tab = tab.add.block.end(tab)
+  tab = tab.repair.stata.version(tab)
 
   tab$line = seq_len(NROW(tab))
   if (any(is.na(tab$orgline))) {

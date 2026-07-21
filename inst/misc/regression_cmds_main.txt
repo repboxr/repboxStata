@@ -22,7 +22,6 @@ bsqreg
 sqreg
 iqreg
 vwls
-gsem
 anova
 oneway
 loneway
@@ -67,7 +66,6 @@ exlogistic
 expoisson
 arch
 frontier
-reg3
 heckman
 etregress
 etpoisson

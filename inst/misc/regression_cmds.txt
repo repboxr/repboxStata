@@ -26,8 +26,6 @@ bsqreg
 sqreg
 iqreg
 vwls
-sem
-gsem
 glm
 cloglog
 logit
@@ -70,7 +68,6 @@ exlogistic
 expoisson
 arch
 frontier
-reg3
 heckman
 etregress
 etpoisson
