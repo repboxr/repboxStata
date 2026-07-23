@@ -14,7 +14,7 @@ stata_cmds_postreg = function() {
 
 
 stata_cmds_quasireg = function() {
-  c("rd","hausman", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hetprob","reg2hdfespatial","gmm","reg3","sem","gsem"
+  c("rd","hausman", "rdrobust","psmatch2","leebounds", "a2reg","xtabond2","altrdrobust","hetprob","reg2hdfespatial","gmm","reg3","sem","gsem", "arima", "arfima"
   )
 }
 stata_cmds_quasireg_with_coef = function() {
@@ -33,7 +33,7 @@ stata_cmds_reg = function() {
 
 get.regcmds = function() {
   return(
-      c("reg", "areg", "ivregress", "ivreg", "ivreg2", "sureg", "reghdfe", "reg2hdfe", "xtreg", "xtivreg2", "xtivreg", "xtlogit", "xtprobit", "xttobit", "regress", "cgmreg", "intreg", "boxcox", "qreg", "truncreg", "cnsreg", "eivreg", "nl", "rreg", "bsqreg", "sqreg", "iqreg", "vwls", "glm", "cloglog", "logit", "logistic", "blogit", "glogit", "binreg", "scobit", "probit", "dprobit", "ivprobit", "bprobit", "gprobit", "hetprobit", "heckprobit", "biprobit", "tobit", "ivtobit", "clogit", "oprobit", "ologit", "heckoprobit", "rologit", "asroprobit", "slogit", "mlogit", "asclogit", "nlogit", "asmprobit", "mprobit", "poisson", "ivpoisson", "nbreg", "gnbreg", "tpoisson", "tnbreg", "zip", "zinb", "exlogistic", "expoisson", "arch", "frontier", "heckman", "etregress", "etpoisson", "arima", "arfima", "newey","newey2", "var", "svar", "vec", "dfactor", "ppmlhdfe", "svyreg", "ppml", "stcox",
+      c("reg", "areg", "ivregress", "ivreg", "ivreg2", "sureg", "reghdfe", "reg2hdfe", "xtreg", "xtivreg2", "xtivreg", "xtlogit", "xtprobit", "xttobit", "regress", "cgmreg", "intreg", "boxcox", "qreg", "truncreg", "cnsreg", "eivreg", "nl", "rreg", "bsqreg", "sqreg", "iqreg", "vwls", "glm", "cloglog", "logit", "logistic", "blogit", "glogit", "binreg", "scobit", "probit", "dprobit", "ivprobit", "bprobit", "gprobit", "hetprobit", "heckprobit", "biprobit", "tobit", "ivtobit", "clogit", "oprobit", "ologit", "heckoprobit", "rologit", "asroprobit", "slogit", "mlogit", "asclogit", "nlogit", "asmprobit", "mprobit", "poisson", "ivpoisson", "nbreg", "gnbreg", "tpoisson", "tnbreg", "zip", "zinb", "exlogistic", "expoisson", "arch", "frontier", "heckman", "etregress", "etpoisson", "newey","newey2", "var", "svar", "vec", "dfactor", "ppmlhdfe", "svyreg", "ppml", "stcox",
          "ivreghdfe","condivreg","xtpoisson",
 
           "givregress",
