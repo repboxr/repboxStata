@@ -1,267 +1,807 @@
-This is a classic Stata scoping architecture challenge. When a user issues a `preserve` inside a program, Stata effectively ties that memory snapshot to the program's namespace. Upon exiting the program, Stata silently executes a garbage-collection layer that implicitly restores the top-level snapshot belonging to that program. 
+### Discussion of the Alternative Proposal
 
-Option B is highly optimal here. We can utilize a stack-based algorithm that mimics Stata's memory garbage collection. By doing so, we can detect program boundaries using the `stata_prog_run` parcel (which tracks `progrunid` reliably across all scopes via RLE), identify which program "owns" which `preserve`, and synthesize an `is_implicit_restore` flag strictly on the first command immediately following the program's termination. 
+Your alternative proposal—creating a `quasi_reg_with_coef` subset while keeping the `quasi_reg` command type—is actually much more elegant and less invasive than introducing a completely new `no_mrb_reg` category across multiple packages. 
 
-This enables your data-path walker (`find_data_run_path`) to jump backwards in time seamlessly without injecting artificial rows that corrupt source line alignments. Because it uses vectorized lookup and a minimal pre-allocated R stack restricted only to `event_rows`, it will be near-instantaneous for the 99% of do-files that don't trigger this pattern.
+Here is why this approach works perfectly with the existing architecture:
+1. **Extraction without side effects:** By simply injecting the `parmest` capture for `quasi_reg_with_coef` in `inject.do`, the Stata reproduction will generate the necessary `.dta` coefficient files in the `tsv/` folder. `rsr_extract_stata_reg_output` indiscriminately parses all those files into `regtab.Rds`. 
+2. **`regcoef_so` integration:** `mrb_make_so_parcels()` converts everything inside `regtab.Rds` into `regcoef_so` parcels. Thus, you get the original Stata coefficients for these quasi-regressions without needing a separate `quasi_regcoef_so` parcel.
+3. **Natural Exclusion from metaregBase:** `mrb_r_base`, `mrb_r_reg`, and `mrb_make_regcheck_parcel` explicitly subset their execution and reporting to `cmd_type == "reg"`. Because `reg3`, `sem`, and `gsem` remain classified as `"quasi_reg"`, the MRB reconstruction pipeline safely skips them.
+4. **Metadata preservation:** `rsr_make_quasi_and_post_reg_parcels` will still output metadata for them into the `quasi_reg` parcel, so you have the basic run metadata and their coefficients cleanly separated.
 
-Here are the required modifications to `drf_paths.R`:
+### Code Change Proposal
 
-!MODIFICATION drf_compute_preserve_rows repboxDRF/R/drf_paths.R
+Below are the modifications to implement this alternative approach. (Note: These replace the changes from the previous `no_mrb_reg` plan.)
+
+!MODIFICATION stata_cmds_quasireg_with_coef repboxStata/R/stata_cmd_lists.R
 scope = "function"
-file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
-insert_before_fun = "add_load_blocks_to_run_df"
-description = "Introduce a highly efficient stack-based logic to resolve both explicit and implicit Stata restores tied to their program scopes."
+file = "/home/rstudio/repbox/repboxStata/R/stata_cmd_lists.R"
+insert_after_fun = "stata_cmds_quasireg"
+description = "Add a list for quasi regressions where we still want to extract parmest coefficients"
 ---
 ```r
-drf_compute_preserve_rows = function(run_df, drf = NULL) {
-  restore.point("drf_compute_preserve_rows")
-  
-  run_df$is_implicit_restore = rep(FALSE, NROW(run_df))
-  run_df$preserve_row = rep(NA_integer_, NROW(run_df))
-  
-  # Fast exit for 99% of cases: No preserves at all
-  if (!any(run_df$cmd == "preserve", na.rm = TRUE)) {
-    return(run_df)
-  }
-  
-  # Load program execution scope tracking
-  has_prog = FALSE
-  if (!is.null(drf) && !is.null(drf$project_dir)) {
-    parcels = repboxDB::repdb_load_parcels(drf$project_dir, "stata_prog_run", drf$parcels)
-    has_prog = !is.null(parcels$stata_prog_run) && nrow(parcels$stata_prog_run) > 0
-  }
-  
-  progrunid = rep(NA_integer_, NROW(run_df))
-  if (has_prog) {
-    idx = match(run_df$runid, parcels$stata_prog_run$runid)
-    valid = !is.na(idx)
-    progrunid[valid] = parcels$stata_prog_run$progrunid[idx[valid]]
-  }
-  
-  # Detect program exit boundaries
-  prog_shifted = c(NA_integer_, progrunid[-length(progrunid)])
-  is_prog_exit = !is.na(prog_shifted) & (is.na(progrunid) | progrunid != prog_shifted)
-  
-  # Filter to actionable event rows to keep the R-loop minimal and extremely fast
-  is_event = run_df$cmd %in% c("preserve", "restore")
-  event_rows = which(is_event | is_prog_exit)
-  
-  if (length(event_rows) == 0) return(run_df)
-  
-  cmds = run_df$cmd[event_rows]
-  progs = progrunid[event_rows]
-  exits = is_prog_exit[event_rows]
-  prev_progs = prog_shifted[event_rows]
-  
-  # Fast pre-allocated arrays mimicking Stata's state frame stack
-  stack_row = integer(1000)
-  stack_prog = integer(1000)
-  stack_idx = 0L
-  
-  for (i in seq_along(event_rows)) {
-    curr_row = event_rows[i]
-    
-    # 1. Process Program Exits (Implicit Restores)
-    if (exits[i]) {
-      # Pop all preserves exclusively belonging to the exiting program's scope
-      while (stack_idx > 0 && !is.na(stack_prog[stack_idx]) && stack_prog[stack_idx] == prev_progs[i]) {
-        run_df$is_implicit_restore[curr_row] = TRUE
-        popped_row = stack_row[stack_idx]
-        
-        # If multiple restores happen at the same line (e.g. nested scope collapse), 
-        # jumping back to the lowest (earliest) preserve dominates memory state.
-        if (is.na(run_df$preserve_row[curr_row]) || popped_row < run_df$preserve_row[curr_row]) {
-          run_df$preserve_row[curr_row] = popped_row
-        }
-        stack_idx = stack_idx - 1L
-      }
-    }
-    
-    # 2. Process Explicit Restores
-    if (cmds[i] == "restore") {
-      if (stack_idx > 0) {
-        popped_row = stack_row[stack_idx]
-        if (is.na(run_df$preserve_row[curr_row]) || popped_row < run_df$preserve_row[curr_row]) {
-          run_df$preserve_row[curr_row] = popped_row
-        }
-        stack_idx = stack_idx - 1L
-      }
-    }
-    
-    # 3. Process Preserves (Push to stack)
-    if (cmds[i] == "preserve") {
-      stack_idx = stack_idx + 1L
-      # Expand stack safely if strictly necessary
-      if (stack_idx > length(stack_row)) {
-        length(stack_row) = length(stack_row) * 2
-        length(stack_prog) = length(stack_prog) * 2
-      }
-      stack_row[stack_idx] = curr_row
-      stack_prog[stack_idx] = progs[i]
-    }
-  }
-  
-  return(run_df)
+stata_cmds_quasireg_with_coef = function() {
+  c("reg3", "sem", "gsem")
 }
 ```
-!END_MODIFICATION drf_compute_preserve_rows repboxDRF/R/drf_paths.R
+!END_MODIFICATION stata_cmds_quasireg_with_coef repboxStata/R/stata_cmd_lists.R
 
-!MODIFICATION drf_make_paths repboxDRF/R/drf_paths.R
+
+!MODIFICATION inject.do repboxStata/R/inject.R
 scope = "function"
-file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
-function_name = "drf_make_paths"
-description = "Pass drf context down to find_one_root_data_paths to allow it to utilize drf packages."
+file = "/home/rstudio/repbox/repboxStata/R/inject.R"
+function_name = "inject.do"
+description = "Inject standard regression extraction for quasi_reg_with_coef commands"
 ---
 ```r
-drf_make_paths = function(drf) {
-  restore.point("drf_make_paths")
-  run_df = drf$run_df; project_dir = drf$project_dir
-  pids = drf$pids
-  if (is.null(pids)) {
-    stop("Please specify drf$pids, the analyis runid of run_df.")
+inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs.opts()) {
+  restore.point("inject.do")
+
+  project_dir=do$project_dir
+  id = tools::file_path_sans_ext(basename(do$file))
+  repbox.dir = file.path(project_dir,"repbox/stata")
+
+  tab = do$tab[[1]]
+  tab$org_cmd = ""
+
+
+  do$tab[[1]]$add.path.correction = tab$cmd %in% c("use","u","us","saveold", "save","sa","sav", "import","export","mkdir","erase","rm","guse","gsave","gzuse","gzsave") |
+    !is.na(tab$using) |
+    !is.na(tab$saving) |
+    (tab$cmd %in% c("graph","gr","gra") & tab$cmd2 %in% c("export","save")) |
+    (tab$cmd %in% c("estimates","est","estim","estimate") & tab$cmd2 %in% c("save","use")) |
+    (tab$cmd %in% "adopath" & tab$cmd2 %in% c("+")) |
+    (tab$cmd %in% c("putexcel") & tab$cmd2 %in% c("set")) |
+    (tab$cmd == "cd" & trimws(tab$txt)!="cd")
+
+  ph = do$ph[[1]]
+  tab = do$tab[[1]]
+
+  tab$run.max = NA_integer_
+  if (!is.null(opts$loop.log.cmd.max)) {
+    rows = tab$in.program == 1 | tab$in_loop == 1
+    tab$run.max[rows] = opts$loop.log.cmd.max
   }
 
-  type_vec = drf_stata_cmd_types_vec()
+  if (!is.null(opts$loop.log.reg.max)) {
+    reg_rows = which(tab$is.regcmd & (tab$in.program == 1 | tab$in_loop == 1))
+    if (length(reg_rows) > 0) {
+      tab$run.max[reg_rows] = opts$loop.log.reg.max
+    }
+  }
+  do$tab[[1]] = tab
 
-  run_df = run_df %>%
-    mutate(
-      cmd_type = type_vec[cmd]
+
+  tab$commented.out = FALSE
+  tab$add.capture=FALSE
+
+  org.txt = txt = replace.ph.keep.lines(tab$txt,ph)
+
+  ignore_lines = identify_ignore_lines(tab)
+  if (length(ignore_lines) > 0) {
+    txt[ignore_lines] = paste0("repbox_ignore: ", txt[ignore_lines])
+  }
+
+  new.txt = txt
+
+  block.rows = tab$opens_block & (!(is.na(tab$quietly)) | !is.na(tab$capture))
+  if (sum(block.rows) >0) {
+    cmds = tab$cmd[block.rows]
+    rows = !is.na(tab$capture[block.rows])
+    cmds[rows] = trimws(tab$capture[block.rows][rows])
+
+    rows = !is.na(tab$quietly[block.rows])
+    cmds[rows] = trimws(tab$quietly[block.rows][rows])
+
+    new.txt[block.rows] = stringi::stri_replace_first(new.txt[block.rows],fixed=cmds, replacement = paste0(cmds, " noisily"))
+  }
+
+  rows = startsWith(trimws(new.txt),"quietly:") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "quietly:") %>% trimws()
+
+  rows = startsWith(trimws(new.txt),"quietly ") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "quietly ") %>% trimws()
+  rows = startsWith(trimws(new.txt),"qui ") & !block.rows
+  new.txt[rows] = str.right.of(new.txt[rows], "qui ") %>% trimws()
+
+  rows = which(tab$cmd == "table")
+  if (length(rows)>0) {
+    is.pre.table = is.pre.Stata17.table.command(tab$txt[rows])
+    if (is.pre.table) {
+      new.txt[rows] = paste0("version 16: ", new.txt[rows])
+    }
+  }
+
+  lines = which(tab$add.path.correction)
+  new.txt[lines] = inject.path.correction.change.cmd(new.txt[lines], lines, do=do)
+
+  lines = which(!(
+    is.true(tab$opens_block) | tab$in.program >= 2 |
+      tab$cmd %in% c("}","foreach","forvalues","forval", "if","else","end", "while")
+  ))
+
+  new.txt[lines] = paste0("capture:  noisily: ",  new.txt[lines])
+  tab$add.capture[lines] = TRUE
+
+  do$tab[[1]] = tab
+
+  ends_with_rbrace_not_macro = endsWith(trimws(tab$txt), "}") & !grepl("\\$\\{[^}]+\\}$", trimws(tab$txt))
+  no.study.lines = which( (trimws(tab$cmd) %in% c("}","end","if","else")) | tab$in.program >= 2 | ends_with_rbrace_not_macro )
+
+  no.study.lines = union(no.study.lines,
+    which(
+      (tab$opens_block & tab$in.program == 1) |
+      (tab$opens_block & lag(tab$in_loop %in% c(1,2)))
+    )
+  )
+
+  if (!opts$report.inside.program) {
+    no.study.lines = union(no.study.lines, which(tab$in.program == 1))
+  }
+
+  # Temporarily treat ignored commands as un-studiable to prevent extraction injections
+  if (length(ignore_lines) > 0) {
+    no.study.lines = union(no.study.lines, ignore_lines)
+  }
+
+  special.lines = NULL
+
+  if (do$does.include & do$use.includes) {
+    incl.df = do$incl.df[[1]]
+    incl.df = adapt.incl.df.for.stata.vars(incl.df,do$project_dir)
+
+    incl.do.df = filter(incl.df, cmd=="do" | cmd == "run")
+
+    lines = incl.do.df$line
+
+    new.txt[lines] = paste0(
+      '\ndisplay "#~# START INCLUDE INJECTION ',do$donum,"_", lines,
+      incl.do.df$find.file.code,
+      '\ncapture: noisily: do "',incl.do.df$repbox.file,'", nostop',
+      '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
     )
 
-  dep_df = drf$dep_df
+    incl.do.df = filter(incl.df, cmd=="include")
+    lines = incl.do.df$line
+    new.txt[lines] = paste0(
+      '\ndisplay "#~# START INCLUDE INJECTION ',do$donum,"_", lines,
+      '\ninclude "',incl.do.df$repbox.file,'"',
+      '\ndisplay "#~# END INCLUDE INJECTION ',do$donum,"_", lines
+    )
+  }
 
-  run_df = run_df %>%
-  mutate(
-    is_mod =  cmd %in% stata2r::stata_data_manip_cmds |
-      runid %in% dep_df$source_runid |
-      cmd_type %in% c("mod","load")
+  before.inject.txt = new.txt
+
+  lines = which(tab$cmd == "clear" & startsWith(trimws(tab$arg_str), "all"))
+  if (length(lines)>0) {
+    cat(paste0("\nReplace ", length(lines)," 'clear all' command in ", do$dofile," with 'clear' to prevent loss of repbox global variables.\n"))
+    new.txt[lines] = stringi::stri_replace_first_regex(new.txt[lines], "\\ball\\b", "")
+    #new.txt[lines] = "clear"
+  }
+
+
+  lines = setdiff(
+    which(tab$cmd %in% c("save", "sa", "sav", "saveold", "gsave", "gzsave","erase","rm")),
+    no.study.lines
   )
-  run_df$is_mod[run_df$cmd=="scalar"] = FALSE
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
 
-  # Split run_df by root_file_path and compute path_df
-  # Then merge path_df again for all run_df
+  lines = setdiff(
+    which(tab$cmd %in% c("erase","rm")),
+    no.study.lines
+  )
+  new.txt[lines] = paste0(
+    inject.intermediate.data.pre(lines, do, opts),
+    new.txt[lines]
+  )
 
-  # FIX: Prevent split() from dropping NA roots.
-  # Fall back to file_path to isolate lost executions correctly.
+  lines = setdiff(which(tab$cmd %in% c("use","u","us", "save","sa", "sav", "saveold", "clear","import","guse","gsave","gzuse","gzsave","rm","erase")), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.use.etc(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
 
-  if (anyNA(run_df$root_file_path)) {
-    repbox_problem(msg="Some run_df$root_file_path were NA set to file_path to generate drf$path_df. Might be problematic if do files cannot be run independently from each other.",type="drf_root_file_path_NA", fail_action="msg", project_dir=drf$project_dir, runid=NA)
-    run_df = run_df %>%
-      mutate(root_file_path = ifelse(is.na(root_file_path), file_path, root_file_path))
+  # CACHE INJECTIONS
+  cache_cmds = repbox_always_cache_cmd()
+  lines = setdiff(which(tab$cmd %in% cache_cmds), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.cache_always(txt[lines], lines, do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
 
+
+  lines = setdiff(which(tab$cmd %in% c("preserve","restore")), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.preserve.restore(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+  lines = setdiff(which(tab$cmd %in% c("esttab") & !is.na(tab$using)), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.esttab.etc(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  lines = setdiff(which(tab$in_loop ==2), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.loop(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  gcmds = get.graphcmds()
+  ngcmds = get.nographcmds()
+  lines = setdiff(which(tab$cmd %in% gcmds & !(tab$cmd %in% ngcmds$cmd & tab$cmd2 %in% ngcmds)), no.study.lines)
+  special.lines = c(special.lines, lines)
+  inj.txt = injection.graph.save(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt )
+
+  if (opts$report.inside.program) {
+    lines = which(tab$cmd == "program")
+    new.txt[lines] = paste0(new.txt[lines],'\ndisplay "!.REPBOX.CUSTOM.PROGRAM>*"')
   }
 
-  srun_li = split(run_df,run_df$root_file_path)
-  path_li = lapply(srun_li, find_one_root_data_paths, pids=pids, drf=drf)
-  path_df = bind_rows(path_li)
-
-  if (NROW(path_df)==0) {
-    cat("\nNo regression command found.")
-    return(NULL)
-  }
-  return(path_df)
-}
-```
-!END_MODIFICATION drf_make_paths repboxDRF/R/drf_paths.R
-
-!MODIFICATION find_one_root_data_paths repboxDRF/R/drf_paths.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
-function_name = "find_one_root_data_paths"
-description = "Pass drf directly into add_load_blocks_to_run_df to allow access to stata_prog_run data."
----
-```r
-find_one_root_data_paths = function(srun_df, pids, drf = NULL) {
-  restore.point("find_one_root_data_paths")
-
-  srun_df$.ROW = seq_len(NROW(srun_df))
-  srun_df = add_load_blocks_to_run_df(srun_df, drf)
-
-  # --- OPTIMIZATION: Compute data modification flags globally ONCE ---
-  # We check the entire run block to resolve dependencies accurately and quickly
-  # rather than doing this inside the loop for every path
-
-  #stata_code = gsub("\n", " ", srun_df$cmdline, fixed = TRUE)
-  #cmd_df = stata2r::s2r_check_mod(stata_code)
-  #srun_df$is_mod = cmd_df$is_mod
-  # -------------------------------------------------------------------
-
-  spid_rows = match(pids, srun_df$runid)
-  spid_rows = spid_rows[!is.na(spid_rows)]
-
-  path_df = bind_rows(lapply(spid_rows, find_data_run_path, srun_df = srun_df, all_pids = pids))
-
-  if (NROW(path_df)==0) return(NULL)
-  path_df
-}
-```
-!END_MODIFICATION find_one_root_data_paths repboxDRF/R/drf_paths.R
-
-
-!MODIFICATION add_load_blocks_to_run_df repboxDRF/R/drf_paths.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
-function_name = "add_load_blocks_to_run_df"
-description = "Rework load blocks generation utilizing the new generalized preserve logic."
----
-```r
-add_load_blocks_to_run_df = function(run_df, drf = NULL) {
-  restore.point("add_load_blocks_to_run_df")
-  
-  # Delegate completely tracking explicit AND implicit preserves and restores
-  run_df = drf_compute_preserve_rows(run_df, drf)
-  
-  cmd_types = drf_stata_cmd_types()
-  load_cmds = cmd_types$load
-
-  is_break = run_df$cmd %in% c(load_cmds, "restore") | run_df$is_implicit_restore
-  run_df$load_block = cumsum(is_break)
-
-  run_df
-}
-```
-!END_MODIFICATION add_load_blocks_to_run_df repboxDRF/R/drf_paths.R
-
-
-!MODIFICATION find_data_run_path repboxDRF/R/drf_paths.R
-scope = "function"
-file = "/home/rstudio/repbox/repboxDRF/R/drf_paths.R"
-function_name = "find_data_run_path"
-description = "Enable backwards-tracing capability natively for implicit restores."
----
-```r
-find_data_run_path = function(pid_row, srun_df, all_pids=NULL) {
-  restore.point("find_data_run_path")
-
-  # All runid in same load block until pid
-  path = which(srun_df$load_block == srun_df$load_block[pid_row] & srun_df$.ROW <= pid_row)
-
-  # If we start with a restore command or an implicit restore, jump to previous preserve
-  # and then add all rows with the same load_block
-  while (TRUE) {
-    first_row = path[1]
-    if (srun_df$cmd[first_row] == "restore" || isTRUE(srun_df$is_implicit_restore[first_row])) {
-      pr_row = srun_df$preserve_row[first_row]
-      if (!is.na(pr_row)) {
-        new_path = which(srun_df$load_block == srun_df$load_block[pr_row] & srun_df$.ROW < pr_row)
-        path = c(new_path, path[-1])
-        next
-      }
+  if (opts$extract.reg.info) {
+    if (!require(repboxStataReg)) {
+      cat("\nInjection of specific regression information is planned for a new package repboxReg. That package does not yet exist.\n")
+      opts$extract.reg.info = FALSE
     }
-    break
   }
 
-  # Adapt path: Utilize the globally computed is_mod flag from srun_df
-  cmd_types = drf_stata_cmd_types()
-  allow = c(cmd_types$scalar, cmd_types$xtset)
+  if (opts$extract.reg.info) {
+    # 1) Main regression commands
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+    
+    # 2) Quasi regression commands where we also extract coefficients
+    quasi_coef_cmds = stata_cmds_quasireg_with_coef()
+    lines = quasi_coef.rows = setdiff(which(tab$cmd %in% quasi_coef_cmds), c(no.study.lines, special.lines))
+    if (length(lines) > 0) {
+      special.lines = c(special.lines, lines)
+      inj.txt = injection.reg(txt[lines],lines,do)
+      new.txt[lines] = paste0(new.txt[lines], inj.txt)
+    }
 
-  keep = seq_along(path) %in% c(1, length(path)) |
-    ((srun_df$is_mod[path] | srun_df$cmd[path] %in% allow) & srun_df$ok[path]) |
-    srun_df$runid[path] %in% all_pids
+  } else {
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg.simple(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
 
-  path = path[keep]
+  # Remaining quasi_reg commands get simple injection
+  quasi_cmds = stata_cmds_quasireg()
+  lines = quasi.rows = setdiff(which(tab$cmd %in% quasi_cmds), c(no.study.lines, special.lines))
+  if (length(lines) > 0) {
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.reg.simple(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
 
-  return( tibble(pid=srun_df$runid[pid_row], runid=srun_df$runid[path]))
+
+  if (isTRUE(opts$extract.scalar.vals)) {
+    lines = reg.rows = setdiff(which(tab$cmd %in% "scalar"), no.study.lines)
+    special.lines = c(special.lines, lines)
+    inj.txt = injection.scalar(txt[lines],lines,do)
+    new.txt[lines] = paste0(new.txt[lines], inj.txt)
+  }
+
+  lines = which(startsWith(new.txt, "set maxvar"))
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  lines = which(tab$cmd %in% c("br","browse", "pause","cls","stop") | (tab$cmd == "set" & is.true(startsWith(tab$cmd2,"trace"))))
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  lines = which(tab$cmd %in% c("log","translate") )
+  no.study.lines = c(no.study.lines, lines)
+  new.txt[lines] = paste0("*", new.txt[lines])
+  tab$commented.out[lines] = TRUE
+
+  if (isTRUE(opts$comment.out.install)) {
+    lines = which(has.substr(new.txt, "ssc ") & has.substr(new.txt, " install "))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+
+    lines = which(has.substr(new.txt, "sysdir ") & has.substr(new.txt, " set "))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+
+  }
+
+  if (!do$use.includes) {
+    lines = which(tab$cmd %in% c("do","include","run"))
+    no.study.lines = c(no.study.lines, lines)
+    new.txt[lines] = paste0("*", new.txt[lines])
+    tab$commented.out[lines] = TRUE
+  }
+
+  # Remove ignore commands from no.study.lines so they are logged explicitly as 'repbox_ignore:'
+  if (length(ignore_lines) > 0) {
+    no.study.lines = setdiff(no.study.lines, ignore_lines)
+  }
+
+  lines = setdiff(seq_len(NROW(tab)), c(special.lines, no.study.lines))
+  inj.txt = injection.other(txt[lines],lines,do)
+  new.txt[lines] = paste0(new.txt[lines], inj.txt)
+
+  lines = setdiff(which(!tab$commented.out), no.study.lines)
+  inj.txt = pre.injection(txt[lines],lines,do)
+  new.txt[lines] = paste0(inj.txt,new.txt[lines])
+
+  lines = setdiff(which(!is.na(tab$run.max)), no.study.lines)
+  new.txt[lines] = inject.loop.max.run(new.txt[lines], before.inject.txt[lines], lines, do)
+
+  tab$new.txt = new.txt
+
+  org.file = do$file
+  do.dir = dirname(org.file)
+  org.base = basename(org.file)
+  new.base = paste0("repbox_", org.base)
+  new.file = file.path(do.dir, new.base)
+
+  log.file = normalizePath(file.path(repbox.dir,"logs", paste0("log_", do$donum,".log")), mustWork=FALSE,winslash = "/")
+
+  incl.log.file = normalizePath(file.path(repbox.dir,"logs", paste0("include_", do$donum,".log")), mustWork=FALSE, winslash = "/")
+
+  log.name = paste0("repbox_log_", do$donum)
+
+  start.timer.file = paste0(project_dir,"/repbox/stata/timer/start.txt")
+  end.timer.file = paste0(project_dir,"/repbox/stata/timer/end.txt")
+
+  txt = c(paste0('
+file open repbox_timer_file using "', start.timer.file,'", write append
+file write repbox_timer_file "', do$donum,';`c(current_time)\';`c(current_date)\'"
+file write repbox_timer_file _n
+file close repbox_timer_file
+
+if "$repbox_cmd_count" == "" {
+  set_defaults _all
+  set more off
+  global repbox_cmd_count = 0
+  global repbox_root_donum = ', do$donum,'
+  log using \"',log.file,'\", replace name(',log.name,')
+  ', adopath.injection.code(project_dir),'
+}
+else {
+  log using \"',incl.log.file,'\", replace name(',log.name,')
+}
+'),
+          new.txt,
+          paste0('
+display "#~# FINISHED DO",
+capture log close ', log.name,'
+
+file open repbox_timer_file using "', end.timer.file,'", write append
+file write repbox_timer_file "', do$donum,';`c(current_time)\';`c(current_date)\'"
+file write repbox_timer_file _n
+file close repbox_timer_file
+'
+          ))
+
+  writeLines(txt, new.file)
+  return(list(do=do,txt=invisible(txt)))
 }
 ```
-!END_MODIFICATION find_data_run_path repboxDRF/R/drf_paths.R
+!END_MODIFICATION inject.do repboxStata/R/inject.R
+
+
+!MODIFICATION normalized.cmdlines.to.tab repboxStata/R/parse.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxStata/R/parse.R"
+function_name = "normalized.cmdlines.to.tab"
+description = "Include quasi_reg_with_coef commands in 'for any' repair logic"
+---
+```r
+normalized.cmdlines.to.tab = function(txt, ph.df, orglines=NULL) {
+  restore.point("normalized.cmdlines.with.ph.to.tab")
+
+  str = txt
+
+  # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
+  str = trimws(str)
+
+  saving = str.right.of(str,"saving#~br",not.found = NA_character_)
+  srows = which(!is.na(saving))
+  if (length(srows)>0) {
+    saving[srows] = str.left.of(saving[srows],"~#")
+    saving[srows] = paste0("#~br", saving[srows],"~#")
+  }
+
+  quietly = rep(NA_character_, length(str))
+  capture = rep(NA_character_, length(str))
+  noisily = rep(NA_character_, length(str))
+
+  changed = TRUE
+  while(changed) {
+    changed = FALSE
+
+    rows = startsWith(str, "quietly:")
+    if (any(rows)) { quietly[rows] = "quietly:"; str[rows] = trimws(str.right.of(str[rows], "quietly:")); changed = TRUE }
+    rows = startsWith(str, "quietly ")
+    if (any(rows)) { quietly[rows] = "quietly "; str[rows] = trimws(str.right.of(str[rows], "quietly ")); changed = TRUE }
+    rows = startsWith(str, "qui:")
+    if (any(rows)) { quietly[rows] = "qui:"; str[rows] = trimws(str.right.of(str[rows], "qui:")); changed = TRUE }
+    rows = startsWith(str, "qui ")
+    if (any(rows)) { quietly[rows] = "qui "; str[rows] = trimws(str.right.of(str[rows], "qui ")); changed = TRUE }
+
+    rows = startsWith(str, "capture:")
+    if (any(rows)) { capture[rows] = "capture:"; str[rows] = trimws(str.right.of(str[rows], "capture:")); changed = TRUE }
+    rows = startsWith(str, "capture ")
+    if (any(rows)) { capture[rows] = "capture "; str[rows] = trimws(str.right.of(str[rows], "capture ")); changed = TRUE }
+    rows = startsWith(str, "cap:")
+    if (any(rows)) { capture[rows] = "cap:"; str[rows] = trimws(str.right.of(str[rows], "cap:")); changed = TRUE }
+    rows = startsWith(str, "cap ")
+    if (any(rows)) { capture[rows] = "cap "; str[rows] = trimws(str.right.of(str[rows], "cap ")); changed = TRUE }
+
+    rows = startsWith(str, "noisily:")
+    if (any(rows)) { noisily[rows] = "noisily:"; str[rows] = trimws(str.right.of(str[rows], "noisily:")); changed = TRUE }
+    rows = startsWith(str, "noisily ")
+    if (any(rows)) { noisily[rows] = "noisily "; str[rows] = trimws(str.right.of(str[rows], "noisily ")); changed = TRUE }
+    rows = startsWith(str, "noi:")
+    if (any(rows)) { noisily[rows] = "noi:"; str[rows] = trimws(str.right.of(str[rows], "noi:")); changed = TRUE }
+    rows = startsWith(str, "noi ")
+    if (any(rows)) { noisily[rows] = "noi "; str[rows] = trimws(str.right.of(str[rows], "noi ")); changed = TRUE }
+  }
+
+
+  # change :\ ad :/ as this is part of file path
+
+  str =gsub(":\\","~;~\\", str, fixed=TRUE)
+  str =gsub(":/","~;~\\", str, fixed=TRUE)
+
+  colon1 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":")
+  colon2 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":")
+  colon3 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":") %>% trimws()
+  str = gsub("~;~\\",":\\", str, fixed=TRUE)
+
+  # Some commands use : in a different way. Then don't store colon stuff
+  no.colon = which(startsWith(txt, "merge"))
+  if (length(no.colon) > 0) {
+    colon1[no.colon] = colon2[no.colon] = colon3[no.colon] = NA
+    str[no.colon] = txt[no.colon]
+  }
+
+  str = gsub(","," ,", str, fixed=TRUE)
+  cmd = str.left.of(str," ")
+  str = paste0(" ",str.right.of(str," "))
+  cmd_br = str.right.of(cmd,"#~br",not.found=NA)
+  cmd_br = ifelse(is.na(cmd_br),NA,paste0("#~br",cmd_br))
+  cmd = str.left.of(cmd, "#")
+
+  opts = str.right.of(str,",",not.found=NA) %>% trimws()
+  str = str.left.of(str,",")
+
+  # Extracting weight variables [myweight] got more complicated:
+  # if conditions can also contain [] like if id=id[_n-1]
+  # we thus suppose that a weight string must have a space before
+  # need to check whether that is indeed always the case
+  weight = rep("", length(str))
+  weight_start = stri_locate_first_regex(str,"(?<![a-z0-9A-Z_])\\[")[,1]
+  wrows = which(!is.na(weight_start))
+  if (length(wrows)>0) {
+    weight_start = weight_start[wrows]
+    rstr = substring(str[wrows], weight_start)
+    weight_end = stri_locate_first_regex(rstr,"\\](?![a-z0-9A-Z_])")[,1]
+    use_wrows = !is.na(weight_end)
+    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end[use_wrows]-1)
+    str[wrows[use_wrows]] = stri_sub(str[wrows[use_wrows]], weight_start[use_wrows])
+  }
+
+
+  #weight = str.between(str,"[","]", not.found=NA) %>% trimws()
+  #str = str.left.of(str,"[")
+
+
+  # Default order is if, in, using
+  # but sometimes different order is used like using, if
+
+  res = extract.if.in.using(str)
+  str = res$str
+  using = res$parts$using
+  in_arg = res$parts[["in"]]
+  if_arg = res$parts[["if"]]
+
+  exp = str.right.of(str,"=",not.found=NA)  %>% trimws()
+  str = str.left.of(str,"=")
+  arg_str = str
+
+  cmd2 = str.left.of(trimws(arg_str)," ", not.found=NA_character_) %>% trimws()
+  cmd2[startsWith(cmd2,"#~")] = NA_character_
+
+  program = ifelse(startsWith(txt, "program define "), str.between(txt,"program define ", " "), NA)
+
+  txt = replace.ph.keep.lines(txt, ph.df)
+  arg_str = replace.ph.keep.lines(arg_str, ph.df)
+  exp = replace.ph.keep.lines(exp, ph.df)
+  cmd_br = replace.ph.keep.lines(cmd_br, ph.df)
+  opts = replace.ph.keep.lines(opts, ph.df)
+
+  na.rows = which(is.na(saving))
+  saving = replace.ph.keep.lines(saving, ph.df)
+  saving[na.rows] = NA_character_
+
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, quietly, capture, noisily)
+
+  # Special treatment for outdated "for any" command in combi with regression. Like
+  # for any y1 y2: reg X z1
+  # We cant well handle those regressions and thus change the command name
+  rows = which(startsWith(tab$colon1,"for any"))
+  if (length(rows)>0) {
+    regcmds = c(get.regcmds(), stata_cmds_quasireg_with_coef())
+    rows = which(startsWith(tab$colon1,"for any") & tab$cmd %in% regcmds)
+    tab$cmd[rows] = paste0("__for_any_", tab$cmd[rows])
+  }
+
+
+  tab = tab.repair.input.cmds(tab)
+
+  if (is.null(orglines))
+    tab$orgline = orglines
+  tab = filter(tab, nchar(trimws(tab$txt))>0)
+  tab$line = seq_len(NROW(tab))
+
+  tab
+}
+```
+!END_MODIFICATION normalized.cmdlines.to.tab repboxStata/R/parse.R
+
+
+!MODIFICATION repbox.do.table repboxStata/R/parse.R
+scope = "function"
+file = "/home/rstudio/repbox/repboxStata/R/parse.R"
+function_name = "repbox.do.table"
+description = "Include quasi_reg_with_coef commands in 'for any' repair logic"
+---
+```r
+repbox.do.table = function(s=NULL,txt=s$newtxt, ph.df = s$ph.df) {
+  restore.point("repa.do.table")
+
+  #orgline.marker = ifelse(is.na(s$orglines),"",paste0("#~oline",s$orglines,"~#"))
+  orgline.marker = ifelse(is.na(s$orglines),"",paste0("#~oline",s$orglines,"-", s$end.orglines, "~#"))
+  newtxt = paste0(orgline.marker,s$newtxt)
+  txt = merge.lines(newtxt)
+
+  # Remove comment placeholders
+  co.ph.df = ph.df %>%
+    filter(startsWith(ph,"#~c")) %>%
+    mutate(content = "")
+  txt = replace.placeholders(txt, co.ph.df)
+
+  # Set brackets () into ph
+  pho = try(blocks.to.placeholder(txt, start=c("("), end=c(")"), ph.prefix = "#~br"))
+  if (is(pho,"try-error")) {
+    pho = stepwise.blocks.to.placeholder(txt, ph.df,ph.prefix = "#~br")
+  }
+  txt = pho$str; br.ph.df = pho$ph.df
+  if (any(duplicated(br.ph.df$ph))) {
+    stop("Parsing error bracket place holders are duplicated. Need to correct placeholder block code.")
+  }
+
+
+  # Find Mata blocks and replace with placeholder
+  mata_pos = locate_mata_blocks(txt)
+  if (NROW(mata_pos)>0) {
+    pho = pos.to.placeholder(txt, mata_pos,ph.prefix = "#~mata_pa ", ph.df=ph.df)
+    txt = pho$str; ph.df = pho$ph.df
+  }
+
+
+  #cat(txt)
+  txt = sep.lines(txt)
+  has.orgline = startsWith(txt,"#~oline")
+  orgline_txt = ifelse(has.orgline, str.between(txt,"#~oline","~#"),"")
+  orgline_start = ifelse(has.orgline,as.integer(str.left.of(orgline_txt,"-")),NA_integer_)
+  orgline_end = ifelse(has.orgline,as.integer(str.right.of(orgline_txt,"-")),NA_integer_)
+
+  #orgline = ifelse(has.orgline, str.between(txt,"#~oline","~#") %>% as.integer(),NA_integer_)
+  txt[has.orgline] = str.right.of(txt[has.orgline],"~#")
+
+  str = txt
+
+  # Replace tabs with spaces
+  # Otherwise we wont correctly store the cmd
+  # variable
+  str = gsub("\t"," ", str, fixed=TRUE)
+
+  # STRIP LEADING WHITESPACE SO THAT startsWith() MATCHES WORK CORRECTLY
+  str = trimws(str)
+
+  saving = str.right.of(str,"saving#~br",not.found = NA)
+  srows = which(!is.na(saving))
+  if (length(srows)>0) {
+    saving[srows] = str.left.of(saving[srows],"~#")
+    saving[srows] = paste0("#~br", saving[srows],"~#")
+  }
+
+  quietly = rep(NA_character_, length(str))
+  capture = rep(NA_character_, length(str))
+  noisily = rep(NA_character_, length(str))
+
+  changed = TRUE
+  while(changed) {
+    changed = FALSE
+
+    rows = startsWith(str, "quietly:")
+    if (any(rows)) { quietly[rows] = "quietly:"; str[rows] = trimws(str.right.of(str[rows], "quietly:")); changed = TRUE }
+    rows = startsWith(str, "quietly ")
+    if (any(rows)) { quietly[rows] = "quietly "; str[rows] = trimws(str.right.of(str[rows], "quietly ")); changed = TRUE }
+    rows = startsWith(str, "qui:")
+    if (any(rows)) { quietly[rows] = "qui:"; str[rows] = trimws(str.right.of(str[rows], "qui:")); changed = TRUE }
+    rows = startsWith(str, "qui ")
+    if (any(rows)) { quietly[rows] = "qui "; str[rows] = trimws(str.right.of(str[rows], "qui ")); changed = TRUE }
+
+    rows = startsWith(str, "capture:")
+    if (any(rows)) { capture[rows] = "capture:"; str[rows] = trimws(str.right.of(str[rows], "capture:")); changed = TRUE }
+    rows = startsWith(str, "capture ")
+    if (any(rows)) { capture[rows] = "capture "; str[rows] = trimws(str.right.of(str[rows], "capture ")); changed = TRUE }
+    rows = startsWith(str, "cap:")
+    if (any(rows)) { capture[rows] = "cap:"; str[rows] = trimws(str.right.of(str[rows], "cap:")); changed = TRUE }
+    rows = startsWith(str, "cap ")
+    if (any(rows)) { capture[rows] = "cap "; str[rows] = trimws(str.right.of(str[rows], "cap ")); changed = TRUE }
+
+    rows = startsWith(str, "noisily:")
+    if (any(rows)) { noisily[rows] = "noisily:"; str[rows] = trimws(str.right.of(str[rows], "noisily:")); changed = TRUE }
+    rows = startsWith(str, "noisily ")
+    if (any(rows)) { noisily[rows] = "noisily "; str[rows] = trimws(str.right.of(str[rows], "noisily ")); changed = TRUE }
+    rows = startsWith(str, "noi:")
+    if (any(rows)) { noisily[rows] = "noi:"; str[rows] = trimws(str.right.of(str[rows], "noi:")); changed = TRUE }
+    rows = startsWith(str, "noi ")
+    if (any(rows)) { noisily[rows] = "noi "; str[rows] = trimws(str.right.of(str[rows], "noi ")); changed = TRUE }
+  }
+
+
+  # change :\ ad :/ as this is part of file path
+
+  str =gsub(":\\","~;~\\", str, fixed=TRUE)
+  str =gsub(":/","~;~\\", str, fixed=TRUE)
+
+  str = trimws(str)
+  opens_block = endsWith(str, "{")
+  closes_block = str == "}"
+
+  colon1 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":")
+  colon2 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":")
+  colon3 = str.left.of(str, ":",not.found = NA) %>% trimws()
+  str = str.right.of(str, ":") %>% trimws()
+  str = gsub("~;~\\",":\\", str, fixed=TRUE)
+
+  # Some commands use : in a different way. Then don't store colon stuff
+  no.colon = which(startsWith(txt, "merge"))
+  if (length(no.colon) > 0) {
+    colon1[no.colon] = colon2[no.colon] = colon3[no.colon] = NA
+    str[no.colon] = txt[no.colon]
+  }
+
+  str = gsub(","," ,", str, fixed=TRUE)
+  cmd = str.left.of(str," ")
+  str = paste0(" ",str.right.of(str," "))
+  cmd_br = str.right.of(cmd,"#~br",not.found=NA)
+  cmd_br = ifelse(is.na(cmd_br),NA,paste0("#~br",cmd_br))
+  cmd = str.left.of(cmd, "#")
+  cmd = str.left.of(cmd,"{")
+
+  opts = str.right.of(str,",",not.found=NA) %>% trimws()
+  str = str.left.of(str,",")
+
+  # Extracting weight variables [myweight] got more complicated:
+  # if conditions can also contain [] like if id=id[_n-1]
+  # we thus suppose that a weight string must have a space before
+  # need to check whether that is indeed always the case
+  weight = rep("", length(str))
+  weight_start = stri_locate_first_regex(str,"(?<![a-z0-9A-Z_])\\[")[,1]
+  wrows = which(!is.na(weight_start))
+  if (length(wrows)>0) {
+    weight_start = weight_start[wrows]
+    rstr = substring(str[wrows], weight_start)
+    weight_end = stri_locate_first_regex(rstr,"\\](?![a-z0-9A-Z_])")[,1]
+    #weight_end = stri_locate_first_fixed(rstr, "]")[,1]
+    use_wrows = !is.na(weight_end)
+    weight[wrows[use_wrows]] = stri_sub(rstr[use_wrows],2,weight_end[use_wrows]-1)
+    str[wrows[use_wrows]] = stri_sub(str[wrows[use_wrows]], weight_start[use_wrows])
+  }
+  #weight = str.between(str,"[","]", not.found=NA) %>% trimws()
+  #str = str.left.of(str,"[")
+
+
+  # Default order is if, in, using
+  # but sometimes different order is used like using, if
+
+  res = extract.if.in.using(str)
+  str = trimws(res$str)
+  using = res$parts$using
+  in_arg = res$parts[["in"]]
+  if_arg = res$parts[["if"]]
+
+
+
+
+  exp = str.right.of(str,"=",not.found=NA_character_)  %>% trimws()
+  str = str.left.of(str,"=")
+  arg_str = str
+
+  cmd2 = str.left.of(trimws(arg_str)," ", not.found=NA_character_) %>% trimws()
+  cmd2[startsWith(cmd2,"#~")] = NA_character_
+
+
+
+  program = ifelse(startsWith(txt, "program define "), str.between(txt,"program define ", " "), NA)
+
+  txt = replace.ph.keep.lines(txt, br.ph.df)
+  arg_str = replace.ph.keep.lines(arg_str, br.ph.df)
+  exp = replace.ph.keep.lines(exp, br.ph.df)
+  cmd_br = replace.ph.keep.lines(cmd_br, br.ph.df)
+  opts = replace.ph.keep.lines(opts, br.ph.df)
+
+  na.rows = which(is.na(saving))
+  saving = replace.ph.keep.lines(saving, br.ph.df)
+  saving[na.rows] = NA_character_
+
+
+  tab = data.frame(cmd,cmd_br=cmd_br,arg_str, exp, if_arg, in_arg, using, opts, cmd2, saving, txt, colon1, colon2,colon3, program, opens_block, closes_block, quietly, capture, noisily, orgline=orgline_start, orgline_start=orgline_start, orgline_end=orgline_end)
+  tab = filter(tab, nchar(trimws(tab$txt))>0)
+
+  # In do files with #delimit ; commands not always a unique
+  # orgline is determined. We want to set that line to orgline
+  # in which the cmd starts
+  rows = which(tab$orgline_start != tab$orgline_end)
+  if (length(rows)>0) {
+    # remove first line which is empty and not accounted
+    # for in orgline
+    org_txt = sep.lines(s$txt)[-1]
+    for (r in rows) {
+      cmd = tab$cmd[r]
+      if (is.na(cmd) || isTRUE(cmd=="")) next
+      olines = tab$orgline_start[r]:tab$orgline_end[r]
+      # prefer later lines: idea is that more likely
+      # a comment before the line contains the command
+      # than a comment below the line
+      points = startsWith(org_txt[olines],cmd) + has.substr(org_txt[olines],cmd) + olines*1e-6
+      tab$orgline[r] = olines[which.max(points)]
+    }
+  }
+
+
+
+
+  # Special treatment for outdated 'for any' command. Like
+  # for any y1 y2: reg X z1
+  # We will say that cmd="for" because we cannot handle for any
+  # when analysing regressions
+
+  # Special treatment for outdated "for any" command in combi with regression. Like
+  # for any y1 y2: reg X z1
+  # We cant well handle those regressions and thus change the command name
+  rows = which(startsWith(tab$colon1,"for any"))
+  if (length(rows)>0) {
+    regcmds = c(get.regcmds(), stata_cmds_quasireg_with_coef())
+    rows = which(startsWith(tab$colon1,"for any") & tab$cmd %in% regcmds)
+    tab$cmd[rows] = paste0("__for_any_", tab$cmd[rows])
+  }
+
+
+  tab = tab.repair.colon.local(tab)
+  tab = tab.repair.input.cmds(tab)
+  tab = tab.replace.texdoc.do(tab)
+  tab = tab.add.block.end(tab)
+  tab = tab.repair.stata.version(tab)
+
+  tab$line = seq_len(NROW(tab))
+  if (any(is.na(tab$orgline))) {
+    stop("Parsing of orgline was not correct. As tab$orgline has NA. Pleas debug parsing code.")
+  }
+
+  tab = tab.add.in.program(tab)
+  tab  = tab.add.in.loop(tab)
+  list(tab=tab, ph.df = ph.df)
+}
+```
+!END_MODIFICATION repbox.do.table repboxStata/R/parse.R

@@ -250,6 +250,12 @@ make_stata_prog_run_parcel = function(project_dir, parcels = list(), overwrite =
   is_prog_start = (stata_cmd$cmd %in% c("program", "prog", "pr", "progr")) &
                   (!repboxUtils::is.true(stata_cmd$cmd2 %in% c("drop", "dir", "list")))
 
+  if (sum(is_prog_start)==0) {
+    parcels$stata_prog_run = tibble::tibble(runid = integer(0), progid = character(0), progrunid = integer(0))
+    repboxDB::repdb_save_parcels(parcels["stata_prog_run"], file.path(project_dir, "repdb"))
+    return(parcels)
+  }
+
   stata_cmd = left_join(stata_cmd, parcels$stata_file %>% select(file_path, script_num=script_num), by="file_path")
 
 

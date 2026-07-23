@@ -220,19 +220,21 @@ inject.do = function(do, reg.cmds = get.regcmds(), save.changed.data=1, opts=rbs
     }
   }
 
+  reg_qreg_cmds = union(reg.cmds, stata_cmds_quasireg_with_coef())
   if (opts$extract.reg.info) {
-    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg_qreg_cmds), no.study.lines)
     special.lines = c(special.lines, lines)
     inj.txt = injection.reg(txt[lines],lines,do)
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   } else {
-    lines = reg.rows = setdiff(which(tab$cmd %in% reg.cmds), no.study.lines)
+    lines = reg.rows = setdiff(which(tab$cmd %in% reg_qreg_cmds), no.study.lines)
     special.lines = c(special.lines, lines)
     inj.txt = injection.reg.simple(txt[lines],lines,do)
     new.txt[lines] = paste0(new.txt[lines], inj.txt)
   }
 
-  quasi_cmds = stata_cmds_quasireg()
+  quasi_cmds = stata_cmds_quasireg_no_coef()
   lines = quasi.rows = setdiff(which(tab$cmd %in% quasi_cmds), c(no.study.lines, special.lines))
   if (length(lines) > 0) {
     special.lines = c(special.lines, lines)
